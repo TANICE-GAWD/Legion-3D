@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import SimliAvatar from '../components/SimliAvatar';
 
@@ -13,6 +13,51 @@ export const SimliTest = () => {
   const toggleSpeaking = () => {
     setIsSpeaking(!isSpeaking);
   };
+
+  // Generate and send audio when speaking
+  useEffect(() => {
+    if (!isSpeaking || !isConnected) {
+      return;
+    }
+
+    const generateSpeechAudio = () => {
+      const sampleRate = 16000;
+      const duration = 0.05; // 50ms chunks
+      const samples = Math.floor(sampleRate * duration);
+      const audioData = new Uint8Array(samples * 2);
+      
+      for (let i = 0; i < samples; i++) {
+        const t = i / sampleRate;
+        const fundamental = 150;
+        const harmonics = [1, 0.5, 0.3, 0.2];
+        
+        let sample = 0;
+        harmonics.forEach((amp, idx) => {
+          const freq = fundamental * (idx + 1);
+          sample += amp * Math.sin(2 * Math.PI * freq * t);
+        });
+        
+        sample += (Math.random() - 0.5) * 0.1;
+        const envelope = Math.sin(t * 10) * 0.5 + 0.5;
+        sample *= envelope * 0.3;
+        
+        const intSample = Math.max(-32767, Math.min(32767, Math.floor(sample * 32767)));
+        audioData[i * 2] = intSample & 0xFF;
+        audioData[i * 2 + 1] = (intSample >> 8) & 0xFF;
+      }
+      
+      return audioData;
+    };
+
+    const interval = setInterval(() => {
+      if (window.simliAvatar && window.simliAvatar.isConnected && isSpeaking) {
+        const speechAudio = generateSpeechAudio();
+        window.simliAvatar.sendAudio(speechAudio);
+      }
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, [isSpeaking, isConnected]);
 
   return (
     <Layout>
