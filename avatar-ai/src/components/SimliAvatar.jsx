@@ -54,6 +54,18 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
   }, [simli_faceid]);
 
   /**
+   * Generate simple audio pattern instead of silence
+   */
+  const generateAudioPattern = (size) => {
+    const audioData = new Uint8Array(size);
+    for (let i = 0; i < size; i++) {
+      // Generate a very quiet sine wave pattern
+      audioData[i] = Math.floor(128 + 10 * Math.sin(i * 0.1));
+    }
+    return audioData;
+  };
+
+  /**
    * Handles the start of the avatar display
    */
   const handleStart = useCallback(async () => {
@@ -71,9 +83,26 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
         setConnectionStatus("connected");
 
         // Send initial audio data to establish connection and show avatar
-        const audioData = new Uint8Array(6000).fill(0);
+        const audioData = generateAudioPattern(6000);
         simliClientRef.current.sendAudioData(audioData);
-        console.log("Sent initial audio data to Simli");
+        console.log("Sent initial audio pattern to Simli");
+
+        // Send a few more chunks to ensure avatar appears
+        setTimeout(() => {
+          if (simliClientRef.current) {
+            const moreAudio = generateAudioPattern(4096);
+            simliClientRef.current.sendAudioData(moreAudio);
+            console.log("Sent additional audio pattern");
+          }
+        }, 500);
+
+        setTimeout(() => {
+          if (simliClientRef.current) {
+            const moreAudio = generateAudioPattern(4096);
+            simliClientRef.current.sendAudioData(moreAudio);
+            console.log("Sent more audio pattern");
+          }
+        }, 1000);
 
         setIsAvatarVisible(true);
         setIsLoading(false);
@@ -148,15 +177,16 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
     if (isAvatarVisible && simliClientRef.current) {
       const interval = setInterval(() => {
         try {
-          // Send silent audio data to keep the avatar active
-          const silentAudio = new Uint8Array(1024).fill(0);
+          // Send larger audio chunks with pattern to keep the avatar active and visible
+          const audioChunk = generateAudioPattern(2048);
           if (simliClientRef.current) {
-            simliClientRef.current.sendAudioData(silentAudio);
+            simliClientRef.current.sendAudioData(audioChunk);
+            console.log("Sent keep-alive audio pattern");
           }
         } catch (error) {
           console.error("Error sending keep-alive audio:", error);
         }
-      }, 2000); // Send every 2 seconds instead of 1
+      }, 1500); // Send every 1.5 seconds
 
       return () => clearInterval(interval);
     }
