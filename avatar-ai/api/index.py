@@ -38,6 +38,10 @@ class AgentRequest(BaseModel):
     first_message: str = "Hello, how can I help you?"
     model_id: str = "eleven_turbo_v2_5"
 
+class SessionRequest(BaseModel):
+    avatar_id: str
+    video_url: str
+
 app = FastAPI()
 
 # Add CORS middleware
@@ -288,4 +292,35 @@ def get_session(session_id: str):
         raise he
     except Exception as e:
         print(f"Error fetching session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# POST Process Session (Save session data)
+# ==========================================
+@app.post("/process-session")
+def process_session(request: SessionRequest):
+    """Process and save session data to database."""
+    try:
+        # Save session to database
+        session_data = {
+            "avatar_id": request.avatar_id,
+            "video_url": request.video_url,
+            "audio_url": None,  # Can be added later if needed
+            "emotion_report": None  # Can be processed later with AI
+        }
+        
+        response = supabase.table('sessions').insert(session_data).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Failed to save session")
+        
+        return {
+            "message": "Session processed successfully",
+            "session_id": response.data[0]["id"],
+            "status": "saved"
+        }
+    
+    except Exception as e:
+        print(f"Error processing session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
