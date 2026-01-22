@@ -2,11 +2,12 @@ import React, { useCallback, useRef, useState, useEffect } from "react";
 import { SimliClient } from "simli-client";
 import VideoBox from "./VideoBox";
 
-const SimliAvatar = ({ simli_faceid, showDottedFace = false }) => {
+const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) => {
   // State management
   const [isLoading, setIsLoading] = useState(false);
   const [isAvatarVisible, setIsAvatarVisible] = useState(false);
   const [error, setError] = useState("");
+  const [showFallback, setShowFallback] = useState(false);
 
   // Refs
   const videoRef = useRef(null);
@@ -20,8 +21,18 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false }) => {
    */
   const initializeSimliClient = useCallback(() => {
     if (videoRef.current && audioRef.current && !simliClientRef.current) {
+      const apiKey = import.meta.env.VITE_SIMLI_API_KEY;
+      
+      if (!apiKey) {
+        console.error("Simli API key not found");
+        setError("Simli API key not configured");
+        setShowFallback(true);
+        setIsLoading(false);
+        return;
+      }
+
       const SimliConfig = {
-        apiKey: import.meta.env.VITE_SIMLI_API_KEY,
+        apiKey: apiKey,
         faceID: simli_faceid,
         handleSilence: true,
         videoRef: videoRef.current,
@@ -51,11 +62,19 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false }) => {
 
         setIsAvatarVisible(true);
         setIsLoading(false);
+        setShowFallback(false);
       });
 
       simliClientRef.current.on("disconnected", () => {
         console.log("SimliClient disconnected");
         setIsAvatarVisible(false);
+      });
+
+      simliClientRef.current.on("error", (error) => {
+        console.error("SimliClient error:", error);
+        setError(`Simli connection failed: ${error.message || error}`);
+        setIsLoading(false);
+        setShowFallback(true);
       });
     }
 
@@ -69,6 +88,7 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false }) => {
       console.error("Error starting Simli avatar:", error);
       setError(`Error starting avatar: ${error.message}`);
       setIsLoading(false);
+      setShowFallback(true);
     }
   }, []);
 
@@ -122,15 +142,32 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false }) => {
         </div>
       )}
       
-      {isLoading && (
+      {isLoading && !showFallback && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-10">
           <div className="bg-white px-4 py-2 rounded-lg shadow-lg">
-            <span className="text-sm font-medium">Loading avatar...</span>
+            <span className="text-sm font-medium">Loading Simli avatar...</span>
           </div>
         </div>
       )}
 
-      <div className={`w-full h-full ${showDottedFace ? 'hidden' : 'block'}`}>
+      {/* Show fallback image if Simli fails or while loading */}
+      {(showFallback || (isLoading && fallbackImage)) && fallbackImage && (
+        <div className="w-full h-full flex items-center justify-center">
+          <img
+            src={fallbackImage}
+            alt="Avatar"
+            className="w-full h-full object-cover"
+          />
+          {showFallback && (
+            <div className="absolute bottom-4 left-4 right-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded p-2 text-sm">
+              Using fallback image - Simli avatar unavailable
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Simli video container */}
+      <div className={`w-full h-full ${showDottedFace || showFallback ? 'hidden' : 'block'}`}>
         <VideoBox video={videoRef} audio={audioRef} />
       </div>
     </div>

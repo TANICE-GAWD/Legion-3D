@@ -1,7 +1,7 @@
 import React from 'react';
 import SimliAvatar from './SimliAvatar';
 
-export const AvatarView = ({ isSpeaking }) => {
+export const AvatarView = ({ isSpeaking, avatar }) => {
   // Default Simli face ID - you can make this configurable later
   const defaultSimliFaceId = "0c2b8b04-5274-41f1-a21c-d5c98322efa9";
   
@@ -10,6 +10,7 @@ export const AvatarView = ({ isSpeaking }) => {
       <SimliAvatar 
         simli_faceid={defaultSimliFaceId}
         showDottedFace={false}
+        fallbackImage={avatar?.image_url}
       />
     </div>
   );

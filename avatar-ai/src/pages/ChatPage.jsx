@@ -255,7 +255,7 @@ export const ChatPage = () => {
                 
                 <div className="bg-white border-[3px] border-black rounded-[30px] overflow-hidden aspect-square relative shadow-[inset_0px_0px_20px_rgba(0,0,0,0.1)]">
                    {isSessionActive ? (
-                      <AvatarView isSpeaking={isAvatarSpeaking} />
+                      <AvatarView isSpeaking={isAvatarSpeaking} avatar={avatar} />
                    ) : (
                       <img
                         src={avatar.image_url}
