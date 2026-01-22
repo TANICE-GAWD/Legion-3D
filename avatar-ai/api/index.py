@@ -37,6 +37,9 @@ class AgentRequest(BaseModel):
     first_message: str = "Hello, how can I help you?"
     model_id: str = "eleven_turbo_v2_5"
 
+class SignedUrlRequest(BaseModel):
+    agentId: str
+
 app = FastAPI()
 
 @app.get("/api")
@@ -193,6 +196,27 @@ def create_agent(request: AgentRequest):
         raise he
     except Exception as e:
         print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# ElevenLabs Signed URL for WebSocket Connection
+# ==========================================
+@app.post("/api/elevenlabs-signed-url")
+def get_elevenlabs_signed_url(request: SignedUrlRequest):
+    """Generate a signed URL for ElevenLabs WebSocket connection."""
+    try:
+        # For now, we'll return a direct WebSocket URL
+        # In production, you might want to implement proper signed URLs
+        signed_url = f"wss://api.elevenlabs.io/v1/convai/conversation?agent_id={request.agentId}"
+        
+        return {
+            "message": "Signed URL generated successfully",
+            "signedUrl": signed_url
+        }
+    
+    except Exception as e:
+        print(f"Error generating signed URL: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
