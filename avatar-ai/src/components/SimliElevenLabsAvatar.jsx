@@ -206,7 +206,11 @@ const SimliElevenLabsAvatar = ({
             if (hasAudio && isSpeakingNow) {
               const base64Audio = float32ToBase64PCM(inputData);
               sendAudioToWebSocket(base64Audio);
-              console.log("Sending audio to ElevenLabs, level:", level);
+              
+              // Reduced logging frequency to avoid spam
+              if (Math.random() < 0.05) { // Log only 5% of audio sends
+                console.log("Sending audio to ElevenLabs, level:", level);
+              }
             }
           } catch (error) {
             console.error("Error processing audio:", error);
@@ -256,15 +260,19 @@ const SimliElevenLabsAvatar = ({
   };
 
   /**
-   * Sends audio data to WebSocket
+   * Sends audio data to WebSocket with proper format
    */
   const sendAudioToWebSocket = (audioData) => {
     if (websocketRef.current?.readyState === WebSocket.OPEN) {
-      websocketRef.current.send(
-        JSON.stringify({
-          user_audio_chunk: audioData,
-        })
-      );
+      const message = {
+        user_audio_chunk: audioData,
+      };
+      
+      websocketRef.current.send(JSON.stringify(message));
+      // Reduced logging frequency to avoid spam
+      if (Math.random() < 0.1) { // Log only 10% of messages
+        console.log("Audio chunk sent to ElevenLabs");
+      }
     }
   };
 
@@ -360,26 +368,58 @@ const SimliElevenLabsAvatar = ({
         clearTimeout(connectionTimeout);
         setIsElevenLabsConnected(true);
 
-        // Send conversation initiation
-        sendMessage(websocket, {
+        // Send conversation initiation with proper format
+        const initMessage = {
           type: ElevenLabsEventTypes.CONVERSATION_INITIATION,
           conversation_initiation_client_data: {
-            custom_llm_extra_body: {}
+            custom_llm_extra_body: {},
+            conversation_config_override: {
+              agent: {
+                prompt: {
+                  prompt: "You are a helpful AI assistant. Respond naturally to the user's questions and comments."
+                }
+              }
+            }
           }
-        });
+        };
+        
+        console.log("Sending conversation initiation:", initMessage);
+        sendMessage(websocket, initMessage);
 
-        // Setup voice streaming after WebSocket is connected
-        try {
-          await setupVoiceStream();
-        } catch (error) {
-          console.error("Failed to setup voice stream:", error);
-          setError("Microphone access failed");
-        }
+        // Wait a moment before setting up voice streaming
+        setTimeout(async () => {
+          try {
+            await setupVoiceStream();
+            console.log("Voice streaming setup complete");
+            
+            // Send a conversation starter after everything is set up
+            setTimeout(() => {
+              if (websocket.readyState === WebSocket.OPEN) {
+                console.log("Sending conversation starter...");
+                sendMessage(websocket, {
+                  type: "conversation_initiation_client_data",
+                  conversation_initiation_client_data: {
+                    conversation_config_override: {
+                      agent: {
+                        first_message: "Hello! I'm ready to chat with you. How are you doing today?"
+                      }
+                    }
+                  }
+                });
+              }
+            }, 2000);
+            
+          } catch (error) {
+            console.error("Failed to setup voice stream:", error);
+            setError("Microphone access failed");
+          }
+        }, 1000);
       };
 
       websocket.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
+          console.log("📨 ElevenLabs message:", data.type, data);
 
           // Handle ping events
           if (data.type === ElevenLabsEventTypes.PING) {
@@ -406,13 +446,14 @@ const SimliElevenLabsAvatar = ({
           // Handle audio data - Send to Simli for avatar animation
           if (data.type === ElevenLabsEventTypes.AUDIO) {
             const { audio_base_64 } = data.audio_event;
+            console.log("🔊 Received audio from ElevenLabs, length:", audio_base_64.length);
 
             if (simliClientRef.current && isSimliConnected) {
               try {
                 // Convert base64 audio to Uint8Array and send to Simli
                 const audioData = base64ToUint8Array(audio_base_64);
                 simliClientRef.current.sendAudioData(audioData);
-                console.log("Sent ElevenLabs audio to Simli:", audioData.length, "bytes");
+                console.log("✅ Sent ElevenLabs audio to Simli:", audioData.length, "bytes");
               } catch (error) {
                 console.error("Error sending audio to Simli:", error);
               }
@@ -421,10 +462,23 @@ const SimliElevenLabsAvatar = ({
 
           // Handle interruption
           if (data.type === ElevenLabsEventTypes.INTERRUPTION) {
-            console.log("Conversation interrupted:", data.interruption_event.reason);
+            console.log("⚠️ Conversation interrupted:", data.interruption_event.reason);
             setIsSpeaking(false);
             onSpeakingChange(false);
           }
+
+          // Handle conversation end
+          if (data.type === "conversation_end") {
+            console.log("🏁 Conversation ended");
+            setIsSpeaking(false);
+            onSpeakingChange(false);
+          }
+
+          // Handle any other message types
+          if (!["ping", "user_transcript", "agent_response", "audio", "interruption"].includes(data.type)) {
+            console.log("❓ Unknown message type:", data.type, data);
+          }
+
         } catch (error) {
           console.error("Error processing WebSocket message:", error);
         }
