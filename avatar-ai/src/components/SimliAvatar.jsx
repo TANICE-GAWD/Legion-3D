@@ -96,6 +96,7 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
     }
 
     setIsLoading(true);
+    setConnectionStatus("connecting");
     setError("");
 
     try {
