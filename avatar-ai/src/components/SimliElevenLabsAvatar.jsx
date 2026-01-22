@@ -27,6 +27,8 @@ const SimliElevenLabsAvatar = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
 
   // Refs
   const videoRef = useRef(null);
@@ -169,7 +171,7 @@ const SimliElevenLabsAvatar = ({
         let lastSendTime = 0;
         const sendInterval = 100; // Send audio every 100ms to reduce load
 
-        // Process audio in real-time with throttling
+        // Process audio in real-time with throttling and level monitoring
         processor.onaudioprocess = (event) => {
           const currentTime = Date.now();
           
@@ -187,12 +189,24 @@ const SimliElevenLabsAvatar = ({
             const inputBuffer = event.inputBuffer;
             const inputData = inputBuffer.getChannelData(0);
 
-            // Only send if we have meaningful audio data
+            // Calculate audio level for visual feedback
+            let sum = 0;
+            for (let i = 0; i < inputData.length; i++) {
+              sum += inputData[i] * inputData[i];
+            }
+            const rms = Math.sqrt(sum / inputData.length);
+            const level = Math.min(100, Math.floor(rms * 1000));
+            setMicLevel(level);
+
+            // Detect if user is speaking (higher threshold)
             const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
+            const isSpeakingNow = level > 5; // Adjust threshold as needed
+            setIsUserSpeaking(isSpeakingNow);
             
-            if (hasAudio) {
+            if (hasAudio && isSpeakingNow) {
               const base64Audio = float32ToBase64PCM(inputData);
               sendAudioToWebSocket(base64Audio);
+              console.log("Sending audio to ElevenLabs, level:", level);
             }
           } catch (error) {
             console.error("Error processing audio:", error);
@@ -379,12 +393,12 @@ const SimliElevenLabsAvatar = ({
 
           // Handle user transcript
           if (data.type === ElevenLabsEventTypes.USER_TRANSCRIPT) {
-            console.log("User transcript:", data.user_transcription_event.user_transcript);
+            console.log("🎤 User transcript:", data.user_transcription_event.user_transcript);
           }
 
           // Handle agent response
           if (data.type === ElevenLabsEventTypes.AGENT_RESPONSE) {
-            console.log("Agent response:", data.agent_response_event.agent_response);
+            console.log("🤖 Agent response:", data.agent_response_event.agent_response);
             setIsSpeaking(true);
             onSpeakingChange(true);
           }
@@ -697,9 +711,38 @@ const SimliElevenLabsAvatar = ({
         {isSpeaking && (
           <div className="absolute top-3 left-3 bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2">
             <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-            Speaking
+            AI Speaking
           </div>
         )}
+
+        {/* Microphone Status and Level Indicator */}
+        <div className="absolute bottom-3 left-3 bg-black/80 text-white px-3 py-2 rounded-lg text-xs">
+          <div className="flex items-center gap-2 mb-1">
+            <div className={`w-2 h-2 rounded-full ${
+              streamRef.current ? 'bg-green-400' : 'bg-red-400'
+            }`} />
+            <span>Mic: {streamRef.current ? 'Active' : 'Inactive'}</span>
+          </div>
+          
+          {/* Audio Level Bar */}
+          {streamRef.current && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs">Level:</span>
+              <div className="w-16 h-2 bg-gray-600 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-100 ${
+                    micLevel > 20 ? 'bg-green-400' : 
+                    micLevel > 5 ? 'bg-yellow-400' : 'bg-gray-400'
+                  }`}
+                  style={{ width: `${Math.min(100, micLevel * 2)}%` }}
+                />
+              </div>
+              <span className={`text-xs ${isUserSpeaking ? 'text-green-400' : 'text-gray-400'}`}>
+                {isUserSpeaking ? 'Speaking' : 'Silent'}
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Manual Controls */}
         {!autoStart && (
