@@ -4,8 +4,7 @@ import { ArrowLeft, Video, VideoOff, Mic, MicOff, MessageCircle, Radio, X } from
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { AgentChat } from '../components/AgentChat';
-import { AvatarView } from '../components/AvatarView';
-import SimliAvatar from '../components/SimliAvatar';
+import { SimliAvatarView } from '../components/SimliAvatarView';
 
 // --- NEO-POP COMPONENTS ---
 
@@ -54,7 +53,6 @@ export const ChatPage = () => {
   const [isMicOn, setIsMicOn] = useState(false);
   const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [useSimliAvatar, setUseSimliAvatar] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -256,60 +254,14 @@ export const ChatPage = () => {
                 <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-32 h-12 border-l-[4px] border-r-[4px] border-black border-t-0 opacity-0 md:opacity-100 rotate-12"></div>
                 
                 <div className="bg-white border-[3px] border-black rounded-[30px] overflow-hidden aspect-square relative shadow-[inset_0px_0px_20px_rgba(0,0,0,0.1)]">
-                   {/* Avatar Type Toggle */}
-                   <div className="absolute top-4 left-4 z-10 flex gap-2">
-                     <button
-                       onClick={() => setUseSimliAvatar(false)}
-                       className={`px-3 py-1 rounded-full text-xs font-bold border-2 transition-colors ${
-                         !useSimliAvatar 
-                           ? 'bg-blue-500 text-white border-blue-600' 
-                           : 'bg-white text-black border-black'
-                       }`}
-                     >
-                       3D
-                     </button>
-                     <button
-                       onClick={() => setUseSimliAvatar(true)}
-                       className={`px-3 py-1 rounded-full text-xs font-bold border-2 transition-colors ${
-                         useSimliAvatar 
-                           ? 'bg-purple-500 text-white border-purple-600' 
-                           : 'bg-white text-black border-black'
-                       }`}
-                     >
-                       Simli
-                     </button>
-                   </div>
-
                    {isSessionActive ? (
-                      useSimliAvatar ? (
-                        <div className="w-full h-full">
-                          <SimliAvatar 
-                            faceId={avatar.simli_face_id || "tmp9i8bbq7c"} 
-                            className="w-full h-full"
-                          />
-                        </div>
-                      ) : (
-                        <AvatarView isSpeaking={isAvatarSpeaking} />
-                      )
+                      <SimliAvatarView isSpeaking={isAvatarSpeaking} />
                    ) : (
-                      useSimliAvatar ? (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-purple-100 to-purple-200">
-                          <div className="text-center">
-                            <div className="w-16 h-16 bg-purple-300 rounded-full mx-auto mb-2 flex items-center justify-center">
-                              <svg className="w-8 h-8 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                              </svg>
-                            </div>
-                            <p className="text-purple-600 text-sm font-bold">Simli Avatar Ready</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <img
-                          src={avatar.image_url}
-                          alt={avatar.name}
-                          className="w-full h-full object-cover"
-                        />
-                      )
+                      <img
+                        src={avatar.image_url}
+                        alt={avatar.name}
+                        className="w-full h-full object-cover"
+                      />
                    )}
                    
                    {/* "On Air" Indicator */}
