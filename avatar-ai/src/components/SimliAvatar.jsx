@@ -8,6 +8,7 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
   const [isAvatarVisible, setIsAvatarVisible] = useState(false);
   const [error, setError] = useState("");
   const [showFallback, setShowFallback] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState("disconnected");
 
   // Refs
   const videoRef = useRef(null);
@@ -67,6 +68,7 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
     if (simliClientRef.current) {
       simliClientRef.current.on("connected", () => {
         console.log("SimliClient connected");
+        setConnectionStatus("connected");
 
         // Send initial audio data to establish connection and show avatar
         const audioData = new Uint8Array(6000).fill(0);
@@ -80,6 +82,7 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
 
       simliClientRef.current.on("disconnected", () => {
         console.log("SimliClient disconnected");
+        setConnectionStatus("disconnected");
         // Don't immediately set isAvatarVisible to false, as this might be a temporary disconnect
         // setIsAvatarVisible(false);
       });
@@ -142,10 +145,16 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
   useEffect(() => {
     if (isAvatarVisible && simliClientRef.current) {
       const interval = setInterval(() => {
-        // Send silent audio data to keep the avatar active
-        const silentAudio = new Uint8Array(1024).fill(0);
-        simliClientRef.current.sendAudioData(silentAudio);
-      }, 1000); // Send every second
+        try {
+          // Send silent audio data to keep the avatar active
+          const silentAudio = new Uint8Array(1024).fill(0);
+          if (simliClientRef.current) {
+            simliClientRef.current.sendAudioData(silentAudio);
+          }
+        } catch (error) {
+          console.error("Error sending keep-alive audio:", error);
+        }
+      }, 2000); // Send every 2 seconds instead of 1
 
       return () => clearInterval(interval);
     }
