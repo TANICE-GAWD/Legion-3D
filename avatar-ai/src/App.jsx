@@ -4,10 +4,10 @@ import { Dashboard } from './pages/Dashboard'
 import { CreateAvatar } from './pages/CreateAvatar'
 import { ChatPage } from './pages/ChatPage'
 import { Sessions } from './pages/Sessions'
+import { SimliTest } from './pages/SimliTest'
 
 import ElderChat from './components/ElderChat'
 import AdminDashboard from './components/AdminDashboard'
-import SimliTest from './components/SimliTest'
 
 function App() {
   return (
@@ -18,9 +18,9 @@ function App() {
         <Route path="/create" element={<CreateAvatar />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/sessions" element={<Sessions />} />
+        <Route path="/simli-test" element={<SimliTest />} />
         <Route path="/elder-chat" element={<ElderChat />} />
         <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/simli-test" element={<SimliTest />} />
       </Routes>
     </Router>
   )

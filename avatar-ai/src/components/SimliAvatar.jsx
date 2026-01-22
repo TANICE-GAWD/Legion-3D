@@ -1,241 +1,202 @@
-import React, { useCallback, useRef, useState, useEffect } from "react";
-import { SimliClient } from "simli-client";
-import VideoBox from "./VideoBox";
+import React, { useCallback, useRef, useState, useEffect } from 'react';
+import { SimliClient } from 'simli-client';
 
-const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) => {
-  // State management
+const SimliAvatar = ({ faceId, className = "" }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [isAvatarVisible, setIsAvatarVisible] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState("");
-  const [showFallback, setShowFallback] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState("disconnected");
 
-  // Refs
   const videoRef = useRef(null);
   const audioRef = useRef(null);
-
-  // Create a single instance of SimliClient
   const simliClientRef = useRef(null);
+  const isInitializedRef = useRef(false);
 
-  /**
-   * Initializes the Simli client with the provided configuration.
-   */
-  const initializeSimliClient = useCallback(() => {
-    if (videoRef.current && audioRef.current && !simliClientRef.current) {
-      const apiKey = import.meta.env.VITE_SIMLI_API_KEY;
-      
-      console.log("Initializing Simli with:", {
-        apiKey: apiKey ? `${apiKey.substring(0, 8)}...` : 'NOT_FOUND',
-        faceID: simli_faceid,
-        videoRef: !!videoRef.current,
-        audioRef: !!audioRef.current
-      });
-      
-      if (!apiKey) {
-        console.error("Simli API key not found");
-        setError("Simli API key not configured");
-        setShowFallback(true);
-        setIsLoading(false);
-        return;
+  // Clean up function
+  const cleanup = useCallback(() => {
+    console.log("Cleaning up Simli client...");
+    
+    if (simliClientRef.current) {
+      try {
+        simliClientRef.current.ClearBuffer();
+        simliClientRef.current.close();
+      } catch (error) {
+        console.warn("Error during cleanup:", error);
       }
+      simliClientRef.current = null;
+    }
+    
+    isInitializedRef.current = false;
+    setIsConnected(false);
+    setIsLoading(false);
+    setError("");
+  }, []);
 
-      const SimliConfig = {
-        apiKey: apiKey,
-        faceID: simli_faceid,
+  // Initialize Simli client
+  const initializeSimliClient = useCallback(() => {
+    // Always cleanup first
+    cleanup();
+    
+    if (videoRef.current && audioRef.current && !isInitializedRef.current) {
+      console.log("Initializing new Simli client...");
+      
+      const simliConfig = {
+        apiKey: import.meta.env.VITE_SIMLI_API_KEY,
+        faceID: faceId,
         handleSilence: true,
         videoRef: videoRef.current,
         audioRef: audioRef.current,
       };
 
       simliClientRef.current = new SimliClient();
-      simliClientRef.current.Initialize(SimliConfig);
-      console.log("Simli Client initialized successfully");
+      simliClientRef.current.Initialize(simliConfig);
+      isInitializedRef.current = true;
+      console.log("Simli Client initialized with face ID:", faceId);
     }
-  }, [simli_faceid]);
+  }, [faceId, cleanup]);
 
-  /**
-   * Generate simple audio pattern instead of silence
-   */
-  const generateAudioPattern = (size) => {
-    const audioData = new Uint8Array(size);
-    for (let i = 0; i < size; i++) {
-      // Generate a very quiet sine wave pattern
-      audioData[i] = Math.floor(128 + 10 * Math.sin(i * 0.1));
-    }
-    return audioData;
-  };
+  // Start the avatar
+  const startAvatar = useCallback(async () => {
+    console.log("Starting avatar...");
+    setIsLoading(true);
+    setError("");
 
-  /**
-   * Handles the start of the avatar display
-   */
-  const handleStart = useCallback(async () => {
-    // Prevent multiple initializations
-    if (simliClientRef.current || isLoading) {
-      console.log("Simli already initializing or initialized, skipping...");
-      return;
-    }
+    try {
+      // Always reinitialize on start
+      initializeSimliClient();
+      
+      if (!simliClientRef.current) {
+        throw new Error("Failed to initialize Simli client");
+      }
 
-    initializeSimliClient();
-
-    if (simliClientRef.current) {
+      // Set up event listeners
       simliClientRef.current.on("connected", () => {
         console.log("SimliClient connected");
-        setConnectionStatus("connected");
-
-        // Send initial audio data to establish connection and show avatar
-        const audioData = generateAudioPattern(6000);
-        simliClientRef.current.sendAudioData(audioData);
-        console.log("Sent initial audio pattern to Simli");
-
-        // Send a few more chunks to ensure avatar appears
-        setTimeout(() => {
-          if (simliClientRef.current) {
-            const moreAudio = generateAudioPattern(4096);
-            simliClientRef.current.sendAudioData(moreAudio);
-            console.log("Sent additional audio pattern");
-          }
-        }, 500);
-
-        setTimeout(() => {
-          if (simliClientRef.current) {
-            const moreAudio = generateAudioPattern(4096);
-            simliClientRef.current.sendAudioData(moreAudio);
-            console.log("Sent more audio pattern");
-          }
-        }, 1000);
-
-        setIsAvatarVisible(true);
+        setIsConnected(true);
         setIsLoading(false);
-        setShowFallback(false);
+        
+        // Send initial audio data to establish connection
+        const audioData = new Uint8Array(6000).fill(0);
+        simliClientRef.current.sendAudioData(audioData);
       });
 
       simliClientRef.current.on("disconnected", () => {
         console.log("SimliClient disconnected");
-        setConnectionStatus("disconnected");
-        // Don't immediately set isAvatarVisible to false, as this might be a temporary disconnect
-        // setIsAvatarVisible(false);
+        setIsConnected(false);
       });
 
       simliClientRef.current.on("error", (error) => {
         console.error("SimliClient error:", error);
-        setError(`Simli connection failed: ${error.message || error}`);
+        setError(`Connection error: ${error.message || error}`);
         setIsLoading(false);
-        setShowFallback(true);
+        setIsConnected(false);
       });
-    }
 
-    setIsLoading(true);
-    setConnectionStatus("connecting");
-    setError("");
-
-    try {
-      // Start Simli client
-      await simliClientRef.current?.start();
+      // Start the client
+      await simliClientRef.current.start();
     } catch (error) {
       console.error("Error starting Simli avatar:", error);
       setError(`Error starting avatar: ${error.message}`);
       setIsLoading(false);
-      setShowFallback(true);
+      setIsConnected(false);
     }
-  }, [initializeSimliClient, isLoading]);
+  }, [initializeSimliClient]);
 
-  /**
-   * Handles stopping the avatar display
-   */
-  const handleStop = useCallback(() => {
-    console.log("Stopping Simli avatar...");
-    setIsLoading(false);
-    setError("");
-    setIsAvatarVisible(false);
-    setConnectionStatus("disconnected");
+  // Stop the avatar
+  const stopAvatar = useCallback(() => {
+    console.log("Stopping avatar...");
+    cleanup();
+  }, [cleanup]);
 
-    // Clean up Simli client
-    if (simliClientRef.current) {
-      simliClientRef.current.ClearBuffer();
-      simliClientRef.current.close();
-      simliClientRef.current = null;
+  // Send audio data to avatar (for future use with audio input)
+  const sendAudioData = useCallback((audioData) => {
+    if (simliClientRef.current && isConnected) {
+      simliClientRef.current.sendAudioData(audioData);
     }
+  }, [isConnected]);
 
-    console.log("Simli avatar stopped");
-  }, []);
-
-  // Auto-start the avatar when component mounts
+  // Cleanup on unmount
   useEffect(() => {
-    const timer = setTimeout(() => {
-      handleStart();
-    }, 100); // Small delay to ensure refs are ready
-    
-    // Cleanup on unmount
     return () => {
-      clearTimeout(timer);
-      handleStop();
+      stopAvatar();
     };
-  }, []); // Remove dependencies to prevent re-initialization
-
-  // Send periodic audio data to keep avatar active
-  useEffect(() => {
-    if (isAvatarVisible && simliClientRef.current) {
-      const interval = setInterval(() => {
-        try {
-          // Send larger audio chunks with pattern to keep the avatar active and visible
-          const audioChunk = generateAudioPattern(2048);
-          if (simliClientRef.current) {
-            simliClientRef.current.sendAudioData(audioChunk);
-            console.log("Sent keep-alive audio pattern");
-          }
-        } catch (error) {
-          console.error("Error sending keep-alive audio:", error);
-        }
-      }, 1500); // Send every 1.5 seconds
-
-      return () => clearInterval(interval);
-    }
-  }, [isAvatarVisible]);
+  }, [stopAvatar]);
 
   return (
-    <div className="w-full h-full relative">
-      {error && (
-        <div className="absolute top-4 left-4 right-4 z-10 p-2 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
-          {error}
-        </div>
-      )}
-      
-      {/* Connection Status Indicator */}
-      <div className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-        <div className={`w-2 h-2 rounded-full ${
-          connectionStatus === 'connected' ? 'bg-green-400' : 
-          connectionStatus === 'connecting' ? 'bg-yellow-400' : 'bg-red-400'
-        }`}></div>
-        <span>{connectionStatus}</span>
-      </div>
-      
-      {isLoading && !showFallback && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-10">
-          <div className="bg-white px-4 py-2 rounded-lg shadow-lg">
-            <span className="text-sm font-medium">Loading Simli avatar...</span>
-          </div>
-        </div>
-      )}
-
-      {/* Show fallback image if Simli fails or while loading */}
-      {(showFallback || (isLoading && fallbackImage)) && fallbackImage && (
-        <div className="w-full h-full flex items-center justify-center">
-          <img
-            src={fallbackImage}
-            alt="Avatar"
-            className="w-full h-full object-cover"
-          />
-          {showFallback && (
-            <div className="absolute bottom-4 left-4 right-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded p-2 text-sm">
-              Using fallback image - Simli avatar unavailable
+    <div className={`relative ${className}`}>
+      {/* Video container */}
+      <div className="aspect-video flex rounded-lg overflow-hidden items-center justify-center bg-gradient-to-b from-gray-100 to-gray-200 relative">
+        <video 
+          ref={videoRef} 
+          autoPlay 
+          playsInline 
+          className={`w-full h-full object-cover transition-opacity duration-300 ${
+            isConnected ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+        <audio ref={audioRef} autoPlay />
+        
+        {/* Loading overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-white font-bold text-sm">Loading Avatar...</span>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* Simli video container */}
-      <div className={`w-full h-full ${showDottedFace || showFallback ? 'hidden' : 'block'}`}>
-        <VideoBox video={videoRef} audio={audioRef} />
+        {/* Error overlay */}
+        {error && (
+          <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center z-10">
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded max-w-xs text-center">
+              <p className="font-bold text-sm">Error</p>
+              <p className="text-xs">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Placeholder when not connected */}
+        {!isConnected && !isLoading && !error && (
+          <div className="absolute inset-0 flex items-center justify-center z-10">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-gray-300 rounded-full mx-auto mb-2 flex items-center justify-center">
+                <svg className="w-8 h-8 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <p className="text-gray-500 text-sm font-medium">Simli Avatar Ready</p>
+              <p className="text-gray-400 text-xs">Click Start to begin</p>
+            </div>
+          </div>
+        )}
+
+        {/* Connection status indicator */}
+        {isConnected && (
+          <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+            Live
+          </div>
+        )}
+      </div>
+
+      {/* Controls */}
+      <div className="mt-4 flex gap-2">
+        {!isConnected ? (
+          <button
+            onClick={startAvatar}
+            disabled={isLoading}
+            className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-2 px-4 rounded-lg font-medium transition-colors"
+          >
+            {isLoading ? "Starting..." : "Start Avatar"}
+          </button>
+        ) : (
+          <button
+            onClick={stopAvatar}
+            className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg font-medium transition-colors"
+          >
+            Stop Avatar
+          </button>
+        )}
       </div>
     </div>
   );
