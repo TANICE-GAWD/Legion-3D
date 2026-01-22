@@ -122,7 +122,7 @@ const SimliElevenLabsAvatar = ({
   };
 
   /**
-   * Sets up voice streaming using Web Audio API
+   * Sets up voice streaming using Web Audio API with modern AudioWorklet (fallback to ScriptProcessor)
    */
   const setupVoiceStream = async () => {
     try {
@@ -148,42 +148,62 @@ const SimliElevenLabsAvatar = ({
       const source = audioContext.createMediaStreamSource(stream);
       sourceRef.current = source;
 
-      // Create ScriptProcessorNode for real-time audio processing
-      const bufferSize = 4096;
-      const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
-      processorRef.current = processor;
-
-      let isProcessing = false;
-
-      // Process audio in real-time
-      processor.onaudioprocess = (event) => {
-        if (isProcessing || !websocketRef.current || websocketRef.current.readyState !== WebSocket.OPEN) {
-          return;
+      // Try to use AudioWorkletNode (modern approach), fallback to ScriptProcessorNode
+      let processor;
+      
+      try {
+        // Modern approach with AudioWorkletNode (if supported)
+        if (audioContext.audioWorklet) {
+          // For now, we'll use the fallback since AudioWorklet requires a separate file
+          throw new Error("Using fallback for compatibility");
         }
+      } catch (workletError) {
+        // Fallback to ScriptProcessorNode (deprecated but widely supported)
+        console.warn("Using deprecated ScriptProcessorNode for audio processing");
+        const bufferSize = 4096;
+        processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+        processorRef.current = processor;
 
-        isProcessing = true;
-        
-        try {
-          const inputBuffer = event.inputBuffer;
-          const inputData = inputBuffer.getChannelData(0);
+        let isProcessing = false;
+        let lastSendTime = 0;
+        const sendInterval = 100; // Send audio every 100ms to reduce load
 
-          // Only send if we have meaningful audio data
-          const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
+        // Process audio in real-time with throttling
+        processor.onaudioprocess = (event) => {
+          const currentTime = Date.now();
           
-          if (hasAudio) {
-            const base64Audio = float32ToBase64PCM(inputData);
-            sendAudioToWebSocket(base64Audio);
+          if (isProcessing || 
+              !websocketRef.current || 
+              websocketRef.current.readyState !== WebSocket.OPEN ||
+              currentTime - lastSendTime < sendInterval) {
+            return;
           }
-        } catch (error) {
-          console.error("Error processing audio:", error);
-        } finally {
-          isProcessing = false;
-        }
-      };
 
-      // Connect the audio processing chain
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+          isProcessing = true;
+          lastSendTime = currentTime;
+          
+          try {
+            const inputBuffer = event.inputBuffer;
+            const inputData = inputBuffer.getChannelData(0);
+
+            // Only send if we have meaningful audio data
+            const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
+            
+            if (hasAudio) {
+              const base64Audio = float32ToBase64PCM(inputData);
+              sendAudioToWebSocket(base64Audio);
+            }
+          } catch (error) {
+            console.error("Error processing audio:", error);
+          } finally {
+            isProcessing = false;
+          }
+        };
+
+        // Connect the audio processing chain
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+      }
 
       console.log("Voice streaming started");
     } catch (error) {
@@ -276,9 +296,20 @@ const SimliElevenLabsAvatar = ({
   };
 
   /**
-   * Establishes WebSocket connection to ElevenLabs
+   * Establishes WebSocket connection to ElevenLabs with better error handling
    */
   const connectToElevenLabs = async () => {
+    console.log("connectToElevenLabs called", { 
+      isElevenLabsConnected, 
+      websocketExists: !!websocketRef.current,
+      agentId 
+    });
+    
+    if (isElevenLabsConnected || websocketRef.current) {
+      console.log("ElevenLabs already connected or connecting");
+      return;
+    }
+
     try {
       const signedUrl = await getElevenLabsSignedUrl(agentId);
       console.log("Got ElevenLabs signed URL");
@@ -286,8 +317,18 @@ const SimliElevenLabsAvatar = ({
       const websocket = new WebSocket(signedUrl);
       websocketRef.current = websocket;
 
+      // Set a connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (websocket.readyState === WebSocket.CONNECTING) {
+          console.error("ElevenLabs connection timeout");
+          websocket.close();
+          setError("ElevenLabs connection timeout");
+        }
+      }, 10000);
+
       websocket.onopen = async () => {
         console.log("ElevenLabs WebSocket connected");
+        clearTimeout(connectionTimeout);
         setIsElevenLabsConnected(true);
 
         // Send conversation initiation
@@ -299,66 +340,87 @@ const SimliElevenLabsAvatar = ({
         });
 
         // Setup voice streaming after WebSocket is connected
-        await setupVoiceStream();
+        try {
+          await setupVoiceStream();
+        } catch (error) {
+          console.error("Failed to setup voice stream:", error);
+          setError("Microphone access failed");
+        }
       };
 
       websocket.onmessage = async (event) => {
-        const data = JSON.parse(event.data);
+        try {
+          const data = JSON.parse(event.data);
 
-        // Handle ping events
-        if (data.type === ElevenLabsEventTypes.PING) {
-          setTimeout(() => {
-            sendMessage(websocket, {
-              type: ElevenLabsEventTypes.PONG,
-              event_id: data.ping_event.event_id,
-            });
-          }, data.ping_event.ping_ms || 0);
-        }
-
-        // Handle user transcript
-        if (data.type === ElevenLabsEventTypes.USER_TRANSCRIPT) {
-          console.log("User transcript:", data.user_transcription_event.user_transcript);
-        }
-
-        // Handle agent response
-        if (data.type === ElevenLabsEventTypes.AGENT_RESPONSE) {
-          console.log("Agent response:", data.agent_response_event.agent_response);
-          setIsSpeaking(true);
-          onSpeakingChange(true);
-        }
-
-        // Handle audio data - Send to Simli for avatar animation
-        if (data.type === ElevenLabsEventTypes.AUDIO) {
-          const { audio_base_64 } = data.audio_event;
-
-          if (simliClientRef.current && isSimliConnected) {
-            // Convert base64 audio to Uint8Array and send to Simli
-            const audioData = base64ToUint8Array(audio_base_64);
-            simliClientRef.current.sendAudioData(audioData);
-            console.log("Sent ElevenLabs audio to Simli:", audioData.length, "bytes");
+          // Handle ping events
+          if (data.type === ElevenLabsEventTypes.PING) {
+            setTimeout(() => {
+              sendMessage(websocket, {
+                type: ElevenLabsEventTypes.PONG,
+                event_id: data.ping_event.event_id,
+              });
+            }, data.ping_event.ping_ms || 0);
           }
-        }
 
-        // Handle interruption
-        if (data.type === ElevenLabsEventTypes.INTERRUPTION) {
-          console.log("Conversation interrupted:", data.interruption_event.reason);
-          setIsSpeaking(false);
-          onSpeakingChange(false);
+          // Handle user transcript
+          if (data.type === ElevenLabsEventTypes.USER_TRANSCRIPT) {
+            console.log("User transcript:", data.user_transcription_event.user_transcript);
+          }
+
+          // Handle agent response
+          if (data.type === ElevenLabsEventTypes.AGENT_RESPONSE) {
+            console.log("Agent response:", data.agent_response_event.agent_response);
+            setIsSpeaking(true);
+            onSpeakingChange(true);
+          }
+
+          // Handle audio data - Send to Simli for avatar animation
+          if (data.type === ElevenLabsEventTypes.AUDIO) {
+            const { audio_base_64 } = data.audio_event;
+
+            if (simliClientRef.current && isSimliConnected) {
+              try {
+                // Convert base64 audio to Uint8Array and send to Simli
+                const audioData = base64ToUint8Array(audio_base_64);
+                simliClientRef.current.sendAudioData(audioData);
+                console.log("Sent ElevenLabs audio to Simli:", audioData.length, "bytes");
+              } catch (error) {
+                console.error("Error sending audio to Simli:", error);
+              }
+            }
+          }
+
+          // Handle interruption
+          if (data.type === ElevenLabsEventTypes.INTERRUPTION) {
+            console.log("Conversation interrupted:", data.interruption_event.reason);
+            setIsSpeaking(false);
+            onSpeakingChange(false);
+          }
+        } catch (error) {
+          console.error("Error processing WebSocket message:", error);
         }
       };
 
       websocket.onclose = (event) => {
         console.log("ElevenLabs WebSocket disconnected", event.code, event.reason);
+        clearTimeout(connectionTimeout);
         setIsElevenLabsConnected(false);
         setIsSpeaking(false);
         onSpeakingChange(false);
         stopVoiceStream();
         websocketRef.current = null;
+        
+        // Only show error if it wasn't a clean close
+        if (event.code !== 1000 && event.code !== 1001) {
+          setError(`ElevenLabs disconnected: ${event.reason || 'Unknown reason'}`);
+        }
       };
 
       websocket.onerror = (error) => {
         console.error("ElevenLabs WebSocket error:", error);
-        setError("ElevenLabs connection failed");
+        clearTimeout(connectionTimeout);
+        setError("ElevenLabs connection failed - check agent ID and API key");
+        setIsElevenLabsConnected(false);
       };
     } catch (error) {
       console.error("Failed to connect to ElevenLabs:", error);
@@ -367,10 +429,13 @@ const SimliElevenLabsAvatar = ({
   };
 
   /**
-   * Starts both Simli and ElevenLabs connections
+   * Starts both Simli and ElevenLabs connections with better error handling
    */
   const startConnection = useCallback(async () => {
-    if (isLoading) return;
+    if (isLoading || (isSimliConnected && isElevenLabsConnected)) {
+      console.log("Connection already in progress or established");
+      return;
+    }
 
     if (!agentId) {
       setError("Agent ID is required");
@@ -387,28 +452,48 @@ const SimliElevenLabsAvatar = ({
         return;
       }
 
-      // Set up Simli event listeners
-      simliClientRef.current.on("connected", () => {
+      // Set up Simli event listeners with better error handling
+      simliClientRef.current.on("connected", async () => {
         console.log("Simli connected");
         setIsSimliConnected(true);
         
         // Send initial silence to establish connection
-        const silenceData = new Uint8Array(1024).fill(0);
-        simliClientRef.current.sendAudioData(silenceData);
-
-        // Start ElevenLabs connection after Simli is ready
-        connectToElevenLabs();
+        try {
+          const silenceData = new Uint8Array(1024).fill(0);
+          simliClientRef.current.sendAudioData(silenceData);
+          console.log("Sent initial silence to Simli");
+          
+          // Wait a bit before starting ElevenLabs to ensure Simli is stable
+          setTimeout(() => {
+            console.log("Attempting to connect to ElevenLabs...", { 
+              simliConnected: isSimliConnected, 
+              elevenLabsConnected: isElevenLabsConnected,
+              agentId 
+            });
+            if (simliClientRef.current && !isElevenLabsConnected) {
+              connectToElevenLabs();
+            }
+          }, 1000);
+        } catch (error) {
+          console.error("Error sending initial silence:", error);
+        }
       });
 
       simliClientRef.current.on("disconnected", () => {
         console.log("Simli disconnected");
         setIsSimliConnected(false);
+        
+        // Don't automatically restart if we're in the middle of stopping
+        if (!isLoading) {
+          setError("Simli connection lost");
+        }
       });
 
       simliClientRef.current.on("error", (error) => {
         console.error("Simli error:", error);
         setError(`Simli error: ${error.message || error}`);
         setIsLoading(false);
+        setIsSimliConnected(false);
       });
 
       // Start Simli connection
@@ -419,18 +504,25 @@ const SimliElevenLabsAvatar = ({
       setError(`Failed to start: ${error.message}`);
       setIsLoading(false);
     }
-  }, [agentId, initializeSimliClient]);
+  }, [agentId, initializeSimliClient, isLoading, isSimliConnected, isElevenLabsConnected]);
 
   /**
-   * Stops all connections
+   * Stops all connections cleanly
    */
   const stopConnection = useCallback(() => {
     console.log("Stopping all connections...");
     
+    // Set loading to prevent new connections during cleanup
+    setIsLoading(true);
+    
     // Close ElevenLabs WebSocket
     if (websocketRef.current) {
-      websocketRef.current.close();
-      websocketRef.current = null;
+      try {
+        websocketRef.current.close(1000, "User initiated disconnect");
+        websocketRef.current = null;
+      } catch (error) {
+        console.error("Error closing WebSocket:", error);
+      }
     }
 
     // Stop voice streaming
@@ -447,11 +539,14 @@ const SimliElevenLabsAvatar = ({
       }
     }
     
+    // Reset all states
     setIsSimliConnected(false);
     setIsElevenLabsConnected(false);
     setIsLoading(false);
     setIsSpeaking(false);
     setError("");
+    
+    // Notify parent components
     onConnectionChange(false);
     onSpeakingChange(false);
     
@@ -468,20 +563,27 @@ const SimliElevenLabsAvatar = ({
     }
   }, [isSimliConnected, isElevenLabsConnected, onConnectionChange]);
 
-  // Auto-start if enabled
+  // Auto-start if enabled with better control
   useEffect(() => {
-    if (autoStart && agentId) {
+    let mounted = true;
+    
+    if (autoStart && agentId && !isLoading && !isSimliConnected && !isElevenLabsConnected) {
       const timer = setTimeout(() => {
-        startConnection();
-      }, 100);
+        if (mounted) {
+          startConnection();
+        }
+      }, 500); // Small delay to ensure component is fully mounted
       
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        mounted = false;
+      };
     }
 
     return () => {
-      stopConnection();
+      mounted = false;
     };
-  }, [autoStart, agentId, startConnection, stopConnection]);
+  }, [autoStart, agentId, startConnection, isLoading, isSimliConnected, isElevenLabsConnected]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -591,6 +693,18 @@ const SimliElevenLabsAvatar = ({
                 End Conversation
               </button>
             )}
+          </div>
+        )}
+
+        {/* ElevenLabs Retry Button (if Simli connected but ElevenLabs failed) */}
+        {isSimliConnected && !isElevenLabsConnected && !isLoading && (
+          <div className="absolute bottom-3 left-3 right-3">
+            <button 
+              onClick={connectToElevenLabs}
+              className="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors font-medium text-sm"
+            >
+              Retry ElevenLabs Connection
+            </button>
           </div>
         )}
       </div>

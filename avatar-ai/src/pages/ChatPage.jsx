@@ -61,6 +61,8 @@ export const ChatPage = () => {
   useEffect(() => {
     if (!avatar) {
       navigate('/dashboard');
+    } else {
+      console.log("Avatar data:", avatar);
     }
   }, [avatar, navigate]);
 
@@ -255,7 +257,7 @@ export const ChatPage = () => {
                 <div className="bg-white border-[3px] border-black rounded-[30px] overflow-hidden aspect-square relative shadow-[inset_0px_0px_20px_rgba(0,0,0,0.1)]">
                    {isSessionActive ? (
                       <SimliElevenLabsAvatarView 
-                        agentId={avatar.agent_id}
+                        agentId={avatar?.agent_id}
                         faceId="0c2b8b04-5274-41f1-a21c-d5c98322efa9"
                         onSpeakingChange={setIsAvatarSpeaking}
                       />
@@ -379,7 +381,6 @@ export const ChatPage = () => {
                          <p className="font-bold">Voice conversation is now integrated with the avatar above.</p>
                          <p className="text-sm mt-1">Start the session to begin talking with your AI friend!</p>
                        </div>
-                    </div>
                     </div>
                   </div>
 

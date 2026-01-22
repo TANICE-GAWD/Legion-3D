@@ -74,22 +74,59 @@ export const SimliTest = () => {
             <h1 className="text-4xl font-black text-white mb-4">
               Simli Avatar Test
             </h1>
-            <p className="text-white/80 text-lg">
+            <p className="text-white/80 text-lg mb-4">
               Test the Simli avatar integration independently
             </p>
+            
+            {/* Mode Selector */}
+            <div className="flex justify-center gap-4 mb-4">
+              <button
+                onClick={() => setTestMode('simli-only')}
+                className={`px-4 py-2 rounded-lg font-bold transition-colors ${
+                  testMode === 'simli-only'
+                    ? 'bg-white text-blue-600'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                Simli Only
+              </button>
+              <button
+                onClick={() => setTestMode('elevenlabs-integrated')}
+                className={`px-4 py-2 rounded-lg font-bold transition-colors ${
+                  testMode === 'elevenlabs-integrated'
+                    ? 'bg-white text-blue-600'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                ElevenLabs + Simli
+              </button>
+            </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8">
             {/* Avatar Display */}
             <div className="bg-white rounded-2xl p-6 shadow-2xl">
-              <h2 className="text-2xl font-bold mb-4 text-center">Avatar Display</h2>
+              <h2 className="text-2xl font-bold mb-4 text-center">
+                {testMode === 'simli-only' ? 'Simli Avatar Only' : 'ElevenLabs + Simli Integration'}
+              </h2>
               <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden">
-                <SimliAvatar
-                  faceId="0c2b8b04-5274-41f1-a21c-d5c98322efa9"
-                  className="w-full h-full"
-                  onConnectionChange={handleConnectionChange}
-                  autoStart={true}
-                />
+                {testMode === 'simli-only' ? (
+                  <SimliAvatar
+                    faceId="0c2b8b04-5274-41f1-a21c-d5c98322efa9"
+                    className="w-full h-full"
+                    onConnectionChange={handleConnectionChange}
+                    autoStart={true}
+                  />
+                ) : (
+                  <SimliElevenLabsAvatar
+                    agentId={testAgentId}
+                    faceId="0c2b8b04-5274-41f1-a21c-d5c98322efa9"
+                    className="w-full h-full"
+                    onConnectionChange={handleConnectionChange}
+                    onSpeakingChange={handleSpeakingChange}
+                    autoStart={true}
+                  />
+                )}
               </div>
             </div>
 
@@ -111,55 +148,107 @@ export const SimliTest = () => {
                   </div>
                 </div>
 
-                {/* Speaking Control */}
-                <div className="p-4 rounded-lg bg-gray-50">
-                  <h3 className="font-bold mb-2">Speaking Simulation</h3>
-                  <button
-                    onClick={toggleSpeaking}
-                    disabled={!isConnected}
-                    className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
-                      isSpeaking
-                        ? 'bg-red-500 hover:bg-red-600 text-white'
-                        : 'bg-green-500 hover:bg-green-600 text-white'
-                    } disabled:bg-gray-300 disabled:cursor-not-allowed`}
-                  >
-                    {isSpeaking ? 'Stop Speaking' : 'Start Speaking'}
-                  </button>
-                  <p className="text-sm text-gray-600 mt-2">
-                    {isSpeaking 
-                      ? 'Avatar should be animating with synthetic speech audio'
-                      : 'Click to simulate AI speaking and animate the avatar'
-                    }
-                  </p>
-                </div>
+                {/* Agent ID Input (for ElevenLabs mode) */}
+                {testMode === 'elevenlabs-integrated' && (
+                  <div className="p-4 rounded-lg bg-gray-50">
+                    <h3 className="font-bold mb-2">ElevenLabs Agent ID</h3>
+                    <input
+                      type="text"
+                      value={testAgentId}
+                      onChange={(e) => setTestAgentId(e.target.value)}
+                      placeholder="Enter ElevenLabs Agent ID"
+                      className="w-full p-2 border rounded-lg text-sm font-mono"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">
+                      The agent ID from your ElevenLabs dashboard
+                    </p>
+                  </div>
+                )}
+
+                {/* Speaking Control (Simli only mode) */}
+                {testMode === 'simli-only' && (
+                  <div className="p-4 rounded-lg bg-gray-50">
+                    <h3 className="font-bold mb-2">Speaking Simulation</h3>
+                    <button
+                      onClick={toggleSpeaking}
+                      disabled={!isConnected}
+                      className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
+                        isSpeaking
+                          ? 'bg-red-500 hover:bg-red-600 text-white'
+                          : 'bg-green-500 hover:bg-green-600 text-white'
+                      } disabled:bg-gray-300 disabled:cursor-not-allowed`}
+                    >
+                      {isSpeaking ? 'Stop Speaking' : 'Start Speaking'}
+                    </button>
+                    <p className="text-sm text-gray-600 mt-2">
+                      {isSpeaking 
+                        ? 'Avatar should be animating with synthetic speech audio'
+                        : 'Click to simulate AI speaking and animate the avatar'
+                      }
+                    </p>
+                  </div>
+                )}
+
+                {/* ElevenLabs Status (ElevenLabs mode) */}
+                {testMode === 'elevenlabs-integrated' && (
+                  <div className="p-4 rounded-lg bg-gray-50">
+                    <h3 className="font-bold mb-2">ElevenLabs Integration</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <span>Connection: {isConnected ? 'Ready' : 'Connecting...'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                        <span>AI Speaking: {isSpeaking ? 'Yes' : 'No'}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-2">
+                      {isConnected 
+                        ? 'Speak into your microphone to start a conversation'
+                        : 'Waiting for connection to establish...'
+                      }
+                    </p>
+                  </div>
+                )}
 
                 {/* Manual Controls */}
-                <div className="p-4 rounded-lg bg-gray-50">
-                  <h3 className="font-bold mb-2">Manual Controls</h3>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => window.simliAvatar?.start()}
-                      className="flex-1 py-2 px-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium"
-                    >
-                      Connect
-                    </button>
-                    <button
-                      onClick={() => window.simliAvatar?.stop()}
-                      className="flex-1 py-2 px-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
-                    >
-                      Disconnect
-                    </button>
+                {testMode === 'simli-only' && (
+                  <div className="p-4 rounded-lg bg-gray-50">
+                    <h3 className="font-bold mb-2">Manual Controls</h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => window.simliAvatar?.start()}
+                        className="flex-1 py-2 px-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium"
+                      >
+                        Connect
+                      </button>
+                      <button
+                        onClick={() => window.simliAvatar?.stop()}
+                        className="flex-1 py-2 px-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Instructions */}
                 <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
                   <h3 className="font-bold mb-2 text-blue-800">Setup Instructions</h3>
                   <ol className="text-sm text-blue-700 space-y-1">
-                    <li>1. Add your VITE_SIMLI_API_KEY to the .env file</li>
-                    <li>2. Ensure you have Simli credits in your account</li>
-                    <li>3. Wait for the avatar to connect (green status)</li>
-                    <li>4. Click "Start Speaking" to test animation</li>
+                    <li>1. Add VITE_SIMLI_API_KEY to the .env file</li>
+                    {testMode === 'elevenlabs-integrated' && (
+                      <li>2. Add VITE_ELEVENLABS_API_KEY to the .env file</li>
+                    )}
+                    <li>{testMode === 'elevenlabs-integrated' ? '3' : '2'}. Ensure you have credits in your accounts</li>
+                    <li>{testMode === 'elevenlabs-integrated' ? '4' : '3'}. Wait for the avatar to connect (green status)</li>
+                    {testMode === 'simli-only' && (
+                      <li>4. Click "Start Speaking" to test animation</li>
+                    )}
+                    {testMode === 'elevenlabs-integrated' && (
+                      <li>5. Speak into your microphone to start conversation</li>
+                    )}
                   </ol>
                 </div>
               </div>
@@ -170,10 +259,14 @@ export const SimliTest = () => {
           <div className="mt-8 bg-black/80 text-white p-4 rounded-xl">
             <h3 className="font-bold mb-2">Debug Information</h3>
             <div className="text-sm font-mono space-y-1">
+              <div>Test Mode: {testMode}</div>
               <div>Connection Status: {isConnected ? 'Connected' : 'Disconnected'}</div>
               <div>Speaking Status: {isSpeaking ? 'Speaking' : 'Silent'}</div>
-              <div>API Key Set: {import.meta.env.VITE_SIMLI_API_KEY ? 'Yes' : 'No'}</div>
-              <div>Window Object: {typeof window.simliAvatar !== 'undefined' ? 'Available' : 'Not Available'}</div>
+              <div>Simli API Key: {import.meta.env.VITE_SIMLI_API_KEY ? 'Set' : 'Missing'}</div>
+              <div>ElevenLabs API Key: {import.meta.env.VITE_ELEVENLABS_API_KEY ? 'Set' : 'Missing'}</div>
+              {testMode === 'elevenlabs-integrated' && (
+                <div>Agent ID: {testAgentId}</div>
+              )}
             </div>
           </div>
         </div>

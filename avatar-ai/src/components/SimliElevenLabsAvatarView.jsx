@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import SimliElevenLabsAvatar from './SimliElevenLabsAvatar';
 
 export const SimliElevenLabsAvatarView = ({ 
@@ -10,9 +10,11 @@ export const SimliElevenLabsAvatarView = ({
 }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   const handleConnectionChange = useCallback((connected) => {
     setIsConnected(connected);
+    setHasError(false); // Clear error when connection succeeds
     onConnectionChange(connected);
   }, [onConnectionChange]);
 
@@ -20,6 +22,11 @@ export const SimliElevenLabsAvatarView = ({
     setIsSpeaking(speaking);
     onSpeakingChange(speaking);
   }, [onSpeakingChange]);
+
+  // Reset error state when agentId changes
+  useEffect(() => {
+    setHasError(false);
+  }, [agentId]);
 
   if (!agentId) {
     return (
