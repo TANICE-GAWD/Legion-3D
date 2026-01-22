@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import SimliAvatar from '../components/SimliAvatar';
+import SimliElevenLabsAvatar from '../components/SimliElevenLabsAvatar';
 
 export const SimliTest = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [testMode, setTestMode] = useState('simli-only'); // 'simli-only' or 'elevenlabs-integrated'
+  const [testAgentId, setTestAgentId] = useState('agent_1201kfk7960ffzt94m5jr0cfhqx4'); // Default test agent
 
   const handleConnectionChange = (connected) => {
     setIsConnected(connected);
+  };
+
+  const handleSpeakingChange = (speaking) => {
+    setIsSpeaking(speaking);
   };
 
   const toggleSpeaking = () => {

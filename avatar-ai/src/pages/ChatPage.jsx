@@ -3,8 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, Video, VideoOff, Mic, MicOff, MessageCircle, Radio, X } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from '../components/Layout';
-import { AgentChat } from '../components/AgentChat';
-import { SimliAvatarView } from '../components/SimliAvatarView';
+import { SimliElevenLabsAvatarView } from '../components/SimliElevenLabsAvatarView';
 
 // --- NEO-POP COMPONENTS ---
 
@@ -255,7 +254,11 @@ export const ChatPage = () => {
                 
                 <div className="bg-white border-[3px] border-black rounded-[30px] overflow-hidden aspect-square relative shadow-[inset_0px_0px_20px_rgba(0,0,0,0.1)]">
                    {isSessionActive ? (
-                      <SimliAvatarView isSpeaking={isAvatarSpeaking} />
+                      <SimliElevenLabsAvatarView 
+                        agentId={avatar.agent_id}
+                        faceId="0c2b8b04-5274-41f1-a21c-d5c98322efa9"
+                        onSpeakingChange={setIsAvatarSpeaking}
+                      />
                    ) : (
                       <img
                         src={avatar.image_url}
@@ -371,11 +374,12 @@ export const ChatPage = () => {
                        <span className="font-black uppercase text-sm">Conversation Log</span>
                     </div>
                     {/* ElevenLabs Chat Component */}
-                    <div className="min-h-[100px]">
-                       <AgentChat 
-                        agentId={avatar.agent_id} 
-                        onSpeakingChange={setIsAvatarSpeaking} 
-                        />
+                    <div className="min-h-[100px] flex items-center justify-center">
+                       <div className="text-center text-gray-600">
+                         <p className="font-bold">Voice conversation is now integrated with the avatar above.</p>
+                         <p className="text-sm mt-1">Start the session to begin talking with your AI friend!</p>
+                       </div>
+                    </div>
                     </div>
                   </div>
 
