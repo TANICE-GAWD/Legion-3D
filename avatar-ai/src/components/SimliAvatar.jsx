@@ -4,17 +4,6 @@ import VideoBox from "./VideoBox";
 import cn from "../utils/TailwindMergeAndClsx";
 import IconSparkleLoader from "./IconSparkleLoader";
 
-// WebSocket event types
-type ElevenLabsWebSocketEvent =
-  | {
-      type: "user_transcript";
-      user_transcription_event: { user_transcript: string };
-    }
-  | { type: "agent_response"; agent_response_event: { agent_response: string } }
-  | { type: "audio"; audio_event: { audio_base_64: string; event_id: number } }
-  | { type: "interruption"; interruption_event: { reason: string } }
-  | { type: "ping"; ping_event: { event_id: number; ping_ms?: number } };
-
 const simliClient = new SimliClient();
 
 const SimliAvatar = ({ 
