@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { AgentChat } from '../components/AgentChat';
 import { AvatarView } from '../components/AvatarView';
+import SimliAvatar from '../components/SimliAvatar';
 
 // --- NEO-POP COMPONENTS ---
 
