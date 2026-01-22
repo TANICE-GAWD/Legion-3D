@@ -5,7 +5,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { AgentChat } from '../components/AgentChat';
 import { AvatarView } from '../components/AvatarView';
-import SimliAvatar from '../components/SimliAvatar';
 
 // --- NEO-POP COMPONENTS ---
 
@@ -256,14 +255,7 @@ export const ChatPage = () => {
                 
                 <div className="bg-white border-[3px] border-black rounded-[30px] overflow-hidden aspect-square relative shadow-[inset_0px_0px_20px_rgba(0,0,0,0.1)]">
                    {isSessionActive ? (
-                      <SimliAvatar 
-                        agentId={avatar.agent_id}
-                        simli_faceid={avatar.simli_face_id || "0c2b8b04-5274-41f1-a21c-d5c98322efa9"}
-                        isActive={isSessionActive}
-                        onSpeakingChange={setIsAvatarSpeaking}
-                        onStart={() => console.log("Simli avatar started")}
-                        onClose={() => console.log("Simli avatar closed")}
-                      />
+                      <AvatarView isSpeaking={isAvatarSpeaking} />
                    ) : (
                       <img
                         src={avatar.image_url}
