@@ -117,6 +117,7 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
     setIsLoading(false);
     setError("");
     setIsAvatarVisible(false);
+    setConnectionStatus("disconnected");
 
     // Clean up Simli client
     if (simliClientRef.current) {
@@ -167,6 +168,15 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
           {error}
         </div>
       )}
+      
+      {/* Connection Status Indicator */}
+      <div className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+        <div className={`w-2 h-2 rounded-full ${
+          connectionStatus === 'connected' ? 'bg-green-400' : 
+          connectionStatus === 'connecting' ? 'bg-yellow-400' : 'bg-red-400'
+        }`}></div>
+        <span>{connectionStatus}</span>
+      </div>
       
       {isLoading && !showFallback && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-10">
