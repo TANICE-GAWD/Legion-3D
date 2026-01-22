@@ -23,6 +23,13 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
     if (videoRef.current && audioRef.current && !simliClientRef.current) {
       const apiKey = import.meta.env.VITE_SIMLI_API_KEY;
       
+      console.log("Initializing Simli with:", {
+        apiKey: apiKey ? `${apiKey.substring(0, 8)}...` : 'NOT_FOUND',
+        faceID: simli_faceid,
+        videoRef: !!videoRef.current,
+        audioRef: !!audioRef.current
+      });
+      
       if (!apiKey) {
         console.error("Simli API key not found");
         setError("Simli API key not configured");
@@ -41,7 +48,7 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
 
       simliClientRef.current = new SimliClient();
       simliClientRef.current.Initialize(SimliConfig);
-      console.log("Simli Client initialized");
+      console.log("Simli Client initialized successfully");
     }
   }, [simli_faceid]);
 
@@ -49,6 +56,12 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
    * Handles the start of the avatar display
    */
   const handleStart = useCallback(async () => {
+    // Prevent multiple initializations
+    if (simliClientRef.current || isLoading) {
+      console.log("Simli already initializing or initialized, skipping...");
+      return;
+    }
+
     initializeSimliClient();
 
     if (simliClientRef.current) {
@@ -67,7 +80,8 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
 
       simliClientRef.current.on("disconnected", () => {
         console.log("SimliClient disconnected");
-        setIsAvatarVisible(false);
+        // Don't immediately set isAvatarVisible to false, as this might be a temporary disconnect
+        // setIsAvatarVisible(false);
       });
 
       simliClientRef.current.on("error", (error) => {
@@ -90,7 +104,7 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
       setIsLoading(false);
       setShowFallback(true);
     }
-  }, []);
+  }, [initializeSimliClient, isLoading]);
 
   /**
    * Handles stopping the avatar display
@@ -113,13 +127,16 @@ const SimliAvatar = ({ simli_faceid, showDottedFace = false, fallbackImage }) =>
 
   // Auto-start the avatar when component mounts
   useEffect(() => {
-    handleStart();
+    const timer = setTimeout(() => {
+      handleStart();
+    }, 100); // Small delay to ensure refs are ready
     
     // Cleanup on unmount
     return () => {
+      clearTimeout(timer);
       handleStop();
     };
-  }, [handleStart, handleStop]);
+  }, []); // Remove dependencies to prevent re-initialization
 
   // Send periodic audio data to keep avatar active
   useEffect(() => {
