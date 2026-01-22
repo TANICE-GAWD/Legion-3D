@@ -454,6 +454,30 @@ const SimliElevenLabsAvatar = ({
                 const audioData = base64ToUint8Array(audio_base_64);
                 simliClientRef.current.sendAudioData(audioData);
                 console.log("✅ Sent ElevenLabs audio to Simli:", audioData.length, "bytes");
+                
+                // Also play audio directly through the audio element for backup
+                if (audioRef.current) {
+                  try {
+                    // Create audio blob and play it
+                    const audioBlob = new Blob([audioData], { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    
+                    // Create a temporary audio element to ensure playback
+                    const tempAudio = new Audio(audioUrl);
+                    tempAudio.volume = 0.8;
+                    tempAudio.play().then(() => {
+                      console.log("🔊 Audio playback started");
+                      // Clean up URL after playback
+                      tempAudio.onended = () => URL.revokeObjectURL(audioUrl);
+                    }).catch(error => {
+                      console.error("Audio playback failed:", error);
+                      URL.revokeObjectURL(audioUrl);
+                    });
+                  } catch (audioError) {
+                    console.error("Error creating audio playback:", audioError);
+                  }
+                }
+                
               } catch (error) {
                 console.error("Error sending audio to Simli:", error);
               }
@@ -474,8 +498,13 @@ const SimliElevenLabsAvatar = ({
             onSpeakingChange(false);
           }
 
+          // Handle conversation metadata
+          if (data.type === "conversation_initiation_metadata") {
+            console.log("📋 Conversation metadata:", data.conversation_initiation_metadata_event);
+          }
+
           // Handle any other message types
-          if (!["ping", "user_transcript", "agent_response", "audio", "interruption"].includes(data.type)) {
+          if (!["ping", "user_transcript", "agent_response", "audio", "interruption", "conversation_initiation_metadata"].includes(data.type)) {
             console.log("❓ Unknown message type:", data.type, data);
           }
 
@@ -706,11 +735,16 @@ const SimliElevenLabsAvatar = ({
           }}
         />
         
-        {/* Audio Element (hidden) */}
+        {/* Audio Element (for backup audio playback) */}
         <audio 
           ref={audioRef} 
           autoPlay 
           className="hidden"
+          controls={false}
+          muted={false}
+          volume={0.8}
+          onError={(e) => console.error("Audio element error:", e)}
+          onPlay={() => console.log("Audio element playing")}
         />
 
         {/* Loading Overlay */}
@@ -760,6 +794,47 @@ const SimliElevenLabsAvatar = ({
             'bg-red-500'
           }`} title="ElevenLabs Connection" />
         </div>
+
+        {/* Volume Control (for testing) */}
+        <div className="absolute top-12 right-3">
+          <button
+            onClick={() => {
+              // Test system audio
+              const testAudio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
+              testAudio.volume = 0.5;
+              testAudio.play().then(() => {
+                console.log("🔊 Test audio played successfully");
+              }).catch(e => {
+                console.error("❌ Test audio failed:", e);
+              });
+            }}
+            className="px-2 py-1 bg-blue-600/80 text-white rounded text-xs hover:bg-blue-700/80"
+          >
+            🔊 Test
+          </button>
+        </div>
+          {/* Simli Status */}
+          <div className={`w-3 h-3 rounded-full ${
+            isSimliConnected ? 'bg-green-500' : 
+            isLoading ? 'bg-yellow-500 animate-pulse' : 
+            'bg-red-500'
+          }`} title="Simli Connection" />
+          
+          {/* ElevenLabs Status */}
+          <div className={`w-3 h-3 rounded-full ${
+            isElevenLabsConnected ? 'bg-blue-500' : 
+            isLoading ? 'bg-yellow-500 animate-pulse' : 
+            'bg-red-500'
+          }`} title="ElevenLabs Connection" />
+        </div>
+
+        {/* Audio Status Indicator */}
+        {isSpeaking && (
+          <div className="absolute top-3 right-16 bg-purple-600/80 text-white px-3 py-1 rounded-full text-xs flex items-center gap-2">
+            <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+            Audio Playing
+          </div>
+        )}
 
         {/* Speaking Indicator */}
         {isSpeaking && (
