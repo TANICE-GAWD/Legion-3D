@@ -28,26 +28,18 @@ const SimliAvatar = ({
   const processorRef = useRef(null);
   const sourceRef = useRef(null);
 
-  // Get ElevenLabs signed URL function (you'll need to implement this in your backend)
+  // Get ElevenLabs signed URL function
   const getElevenLabsSignedUrl = async (agentId) => {
     try {
-      const response = await fetch(`/api/elevenlabs-signed-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to get signed URL: ${response.status}`);
+      // Fallback: construct URL directly with API key
+      const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
+      if (!apiKey) {
+        throw new Error("ElevenLabs API key not found in environment variables");
       }
-      
-      const data = await response.json();
-      return data.signedUrl;
+      return `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}&api_key=${apiKey}`;
     } catch (error) {
       console.error('Error getting signed URL:', error);
-      // Fallback: construct URL directly (less secure)
-      const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
-      return `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}&api_key=${apiKey}`;
+      throw error;
     }
   };
 
@@ -64,8 +56,13 @@ const SimliAvatar = ({
         audioRef: audioRef.current,
       };
 
-      simliClient.Initialize(SimliConfig);
-      console.log("Simli Client initialized");
+      try {
+        simliClient.Initialize(SimliConfig);
+        console.log("Simli Client initialized successfully");
+      } catch (error) {
+        console.error("Failed to initialize Simli client:", error);
+        setError(`Failed to initialize Simli: ${error.message}`);
+      }
     }
   }, [simli_faceid]);
 
@@ -237,7 +234,7 @@ const SimliAvatar = ({
   /**
    * Establishes WebSocket connection to ElevenLabs
    */
-  const connectToElevenLabs = async () => {
+  const connectToElevenLabs = useCallback(async () => {
     try {
       // Get signed URL for the agent first
       const signedUrl = await getElevenLabsSignedUrl(agentId);
@@ -247,80 +244,105 @@ const SimliAvatar = ({
       const websocket = new WebSocket(signedUrl);
       websocketRef.current = websocket;
 
+      // Set up connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (websocket.readyState !== WebSocket.OPEN) {
+          websocket.close();
+          setError("ElevenLabs connection timeout");
+          setIsLoading(false);
+        }
+      }, 10000); // 10 second timeout
+
       websocket.onopen = async () => {
+        clearTimeout(connectionTimeout);
         console.log("ElevenLabs WebSocket connected");
 
-        // Send conversation initiation with proper format
-        sendMessage(websocket, {
-          type: "conversation_initiation_client_data",
-          conversation_initiation_client_data: {
-            custom_llm_extra_body: {}
-          }
-        });
+        try {
+          // Send conversation initiation with proper format
+          sendMessage(websocket, {
+            type: "conversation_initiation_client_data",
+            conversation_initiation_client_data: {
+              custom_llm_extra_body: {}
+            }
+          });
 
-        // Setup voice streaming after WebSocket is connected
-        await setupVoiceStream();
+          // Setup voice streaming after WebSocket is connected
+          await setupVoiceStream();
 
-        setIsAvatarVisible(true);
-        setIsLoading(false);
-        onStart?.();
+          setIsAvatarVisible(true);
+          setIsLoading(false);
+          onStart?.();
+        } catch (error) {
+          console.error("Error in WebSocket onopen handler:", error);
+          setError(`Setup error: ${error.message}`);
+          setIsLoading(false);
+        }
       };
 
       websocket.onmessage = async (event) => {
-        const data = JSON.parse(event.data);
+        try {
+          const data = JSON.parse(event.data);
 
-        // Handle ping events to keep connection alive
-        if (data.type === "ping") {
-          setTimeout(() => {
-            sendMessage(websocket, {
-              type: "pong",
-              event_id: data.ping_event.event_id,
-            });
-          }, data.ping_event.ping_ms || 0);
-        }
-
-        // Handle user transcript
-        if (data.type === "user_transcript") {
-          console.log(
-            "User transcript:",
-            data.user_transcription_event.user_transcript
-          );
-        }
-
-        // Handle agent response
-        if (data.type === "agent_response") {
-          console.log(
-            "Agent response:",
-            data.agent_response_event.agent_response
-          );
-          onSpeakingChange?.(true);
-        }
-
-        // Handle audio data - THIS IS THE KEY PART
-        if (data.type === "audio") {
-          const { audio_base_64 } = data.audio_event;
-
-          // Convert base64 audio to Uint8Array and send to Simli
-          const audioData = base64ToUint8Array(audio_base_64);
-
-          // Send audio data to Simli client
-          if (simliClient) {
-            simliClient.sendAudioData(audioData);
-            console.log("Sent audio data to Simli:", audioData.length, "bytes");
+          // Handle ping events to keep connection alive
+          if (data.type === "ping") {
+            setTimeout(() => {
+              sendMessage(websocket, {
+                type: "pong",
+                event_id: data.ping_event.event_id,
+              });
+            }, data.ping_event.ping_ms || 0);
           }
-        }
 
-        // Handle interruption
-        if (data.type === "interruption") {
-          console.log(
-            "Conversation interrupted:",
-            data.interruption_event.reason
-          );
-          onSpeakingChange?.(false);
+          // Handle user transcript
+          if (data.type === "user_transcript") {
+            console.log(
+              "User transcript:",
+              data.user_transcription_event.user_transcript
+            );
+          }
+
+          // Handle agent response
+          if (data.type === "agent_response") {
+            console.log(
+              "Agent response:",
+              data.agent_response_event.agent_response
+            );
+            onSpeakingChange?.(true);
+          }
+
+          // Handle audio data - THIS IS THE KEY PART
+          if (data.type === "audio") {
+            const { audio_base_64 } = data.audio_event;
+
+            // Convert base64 audio to Uint8Array and send to Simli
+            const audioData = base64ToUint8Array(audio_base_64);
+
+            // Send audio data to Simli client only if it's connected
+            if (simliClient && isAvatarVisible) {
+              try {
+                simliClient.sendAudioData(audioData);
+                console.log("Sent audio data to Simli:", audioData.length, "bytes");
+              } catch (simliError) {
+                console.error("Error sending audio to Simli:", simliError);
+              }
+            }
+          }
+
+          // Handle interruption
+          if (data.type === "interruption") {
+            console.log(
+              "Conversation interrupted:",
+              data.interruption_event.reason
+            );
+            onSpeakingChange?.(false);
+          }
+        } catch (parseError) {
+          console.error("Error parsing WebSocket message:", parseError);
         }
       };
 
       websocket.onclose = (event) => {
+        clearTimeout(connectionTimeout);
         console.log("ElevenLabs WebSocket disconnected", event.code, event.reason);
         setIsAvatarVisible(false);
         stopVoiceStream();
@@ -330,6 +352,7 @@ const SimliAvatar = ({
       };
 
       websocket.onerror = (error) => {
+        clearTimeout(connectionTimeout);
         console.error("ElevenLabs WebSocket error:", error);
         setError("WebSocket connection failed");
         setIsLoading(false);
@@ -351,38 +374,71 @@ const SimliAvatar = ({
       return;
     }
 
-    initializeSimliClient();
+    if (!import.meta.env.VITE_SIMLI_API_KEY) {
+      setError("Simli API key not configured. Please add VITE_SIMLI_API_KEY to your .env file.");
+      return;
+    }
 
-    if (simliClient) {
-      simliClient?.on("connected", () => {
-        console.log("SimliClient connected");
-
-        // Send initial audio data to establish connection
-        const audioData = new Uint8Array(6000).fill(0);
-        simliClient?.sendAudioData(audioData);
-        console.log("Sent initial audio data to Simli");
-
-        // Start ElevenLabs WebSocket connection
-        connectToElevenLabs();
-      });
-
-      simliClient?.on("disconnected", () => {
-        console.log("SimliClient disconnected");
-      });
+    if (!import.meta.env.VITE_ELEVENLABS_API_KEY) {
+      setError("ElevenLabs API key not configured. Please add VITE_ELEVENLABS_API_KEY to your .env file.");
+      return;
     }
 
     setIsLoading(true);
     setError("");
 
     try {
-      // Start Simli client
+      // Initialize Simli client first
+      initializeSimliClient();
+
+      // Set up event handlers with proper error handling
+      simliClient?.on("connected", async () => {
+        console.log("SimliClient connected successfully");
+        
+        try {
+          // Wait a bit to ensure connection is stable
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Send initial audio data to establish connection
+          const audioData = new Uint8Array(6000).fill(0);
+          simliClient?.sendAudioData(audioData);
+          console.log("Sent initial audio data to Simli");
+
+          // Start ElevenLabs WebSocket connection after Simli is ready
+          await connectToElevenLabs();
+        } catch (error) {
+          console.error("Error in Simli connected handler:", error);
+          setError(`Connection error: ${error.message}`);
+          setIsLoading(false);
+        }
+      });
+
+      simliClient?.on("disconnected", () => {
+        console.log("SimliClient disconnected");
+        setIsAvatarVisible(false);
+      });
+
+      simliClient?.on("error", (error) => {
+        console.error("SimliClient error:", error);
+        setError(`Simli error: ${error.message || error}`);
+        setIsLoading(false);
+      });
+
+      // Start Simli client with timeout
+      const startTimeout = setTimeout(() => {
+        setError("Connection timeout. Please try again.");
+        setIsLoading(false);
+      }, 15000); // 15 second timeout
+
       await simliClient?.start();
+      clearTimeout(startTimeout);
+      
     } catch (error) {
       console.error("Error starting interaction:", error);
       setError(`Error starting interaction: ${error.message}`);
       setIsLoading(false);
     }
-  }, [agentId, initializeSimliClient]);
+  }, [agentId, initializeSimliClient, connectToElevenLabs]);
 
   /**
    * Handles stopping the interaction
@@ -434,7 +490,7 @@ const SimliAvatar = ({
   return (
     <div className="w-full h-full relative">
       {error && (
-        <div className="absolute top-4 left-4 right-4 z-10 p-2 bg-red-100 border border-red-400 text-red-700 rounded">
+        <div className="absolute top-4 left-4 right-4 z-10 p-2 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
           {error}
         </div>
       )}
