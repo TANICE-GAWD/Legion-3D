@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
 import { SimliClient } from "simli-client";
+import ConnectionDebugger from "./ConnectionDebugger";
 
 // WebSocket event types for ElevenLabs
 const ElevenLabsEventTypes = {
@@ -263,15 +264,21 @@ const SimliElevenLabsAvatar = ({
   };
 
   /**
-   * Gets ElevenLabs signed URL
+   * Gets ElevenLabs signed URL with better error handling
    */
   const getElevenLabsSignedUrl = async (agentId) => {
     try {
       const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
       
       if (!apiKey) {
-        throw new Error("ElevenLabs API key not found");
+        throw new Error("ElevenLabs API key not found in environment variables");
       }
+
+      if (!agentId) {
+        throw new Error("Agent ID is required");
+      }
+
+      console.log("Requesting signed URL for agent:", agentId);
 
       const response = await fetch(
         `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`,
@@ -284,7 +291,15 @@ const SimliElevenLabsAvatar = ({
       );
 
       if (!response.ok) {
-        throw new Error(`Failed to get signed URL: ${response.statusText}`);
+        if (response.status === 404) {
+          throw new Error(`Agent ID '${agentId}' not found. Please check your ElevenLabs dashboard and ensure the agent exists.`);
+        } else if (response.status === 401) {
+          throw new Error("Invalid ElevenLabs API key. Please check your VITE_ELEVENLABS_API_KEY in .env file.");
+        } else if (response.status === 403) {
+          throw new Error("Access denied. Please check if your API key has access to this agent.");
+        } else {
+          throw new Error(`ElevenLabs API error: ${response.status} - ${response.statusText}`);
+        }
       }
 
       const data = await response.json();
@@ -432,6 +447,13 @@ const SimliElevenLabsAvatar = ({
    * Starts both Simli and ElevenLabs connections with better error handling
    */
   const startConnection = useCallback(async () => {
+    console.log("startConnection called", { 
+      isLoading, 
+      isSimliConnected, 
+      isElevenLabsConnected, 
+      agentId 
+    });
+
     if (isLoading || (isSimliConnected && isElevenLabsConnected)) {
       console.log("Connection already in progress or established");
       return;
@@ -470,7 +492,7 @@ const SimliElevenLabsAvatar = ({
               elevenLabsConnected: isElevenLabsConnected,
               agentId 
             });
-            if (simliClientRef.current && !isElevenLabsConnected) {
+            if (simliClientRef.current && !websocketRef.current) {
               connectToElevenLabs();
             }
           }, 1000);
@@ -504,7 +526,7 @@ const SimliElevenLabsAvatar = ({
       setError(`Failed to start: ${error.message}`);
       setIsLoading(false);
     }
-  }, [agentId, initializeSimliClient, isLoading, isSimliConnected, isElevenLabsConnected]);
+  }, [agentId]); // Minimal dependencies
 
   /**
    * Stops all connections cleanly
@@ -563,39 +585,44 @@ const SimliElevenLabsAvatar = ({
     }
   }, [isSimliConnected, isElevenLabsConnected, onConnectionChange]);
 
-  // Auto-start if enabled with better control
+  // Auto-start if enabled - simplified and stable
   useEffect(() => {
-    let mounted = true;
-    
-    if (autoStart && agentId && !isLoading && !isSimliConnected && !isElevenLabsConnected) {
-      const timer = setTimeout(() => {
-        if (mounted) {
-          startConnection();
-        }
-      }, 500); // Small delay to ensure component is fully mounted
+    if (autoStart && agentId) {
+      console.log("Auto-start triggered", { agentId, isLoading, isSimliConnected, isElevenLabsConnected });
       
-      return () => {
-        clearTimeout(timer);
-        mounted = false;
-      };
+      // Only start if not already connected or loading
+      if (!isLoading && !isSimliConnected && !isElevenLabsConnected) {
+        const timer = setTimeout(() => {
+          console.log("Executing auto-start...");
+          startConnection();
+        }, 1000); // Longer delay to ensure component is stable
+        
+        return () => clearTimeout(timer);
+      }
     }
+  }, [autoStart, agentId]); // Minimal dependencies to prevent re-runs
 
-    return () => {
-      mounted = false;
-    };
-  }, [autoStart, agentId, startConnection, isLoading, isSimliConnected, isElevenLabsConnected]);
-
-  // Cleanup on unmount
+  // Cleanup on unmount only - prevent premature cleanup
   useEffect(() => {
     return () => {
+      console.log("Component unmounting, cleaning up connections...");
       stopConnection();
     };
-  }, [stopConnection]);
+  }, []); // Empty dependency array - only run on unmount
 
   const isConnected = isSimliConnected && isElevenLabsConnected;
 
   return (
     <div className={`relative ${className}`}>
+      {/* Connection Debugger */}
+      <ConnectionDebugger
+        isSimliConnected={isSimliConnected}
+        isElevenLabsConnected={isElevenLabsConnected}
+        isLoading={isLoading}
+        error={error}
+        agentId={agentId}
+      />
+
       {/* Video Container */}
       <div className="relative w-full h-full bg-gray-900 rounded-lg overflow-hidden">
         {/* Video Element */}

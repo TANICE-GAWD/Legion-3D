@@ -12,13 +12,23 @@ export const SimliElevenLabsAvatarView = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [hasError, setHasError] = useState(false);
 
+  // Debug component lifecycle
+  useEffect(() => {
+    console.log("SimliElevenLabsAvatarView mounted/updated", { agentId });
+    return () => {
+      console.log("SimliElevenLabsAvatarView cleanup", { agentId });
+    };
+  }, [agentId]);
+
   const handleConnectionChange = useCallback((connected) => {
+    console.log("Connection change:", connected);
     setIsConnected(connected);
     setHasError(false); // Clear error when connection succeeds
     onConnectionChange(connected);
   }, [onConnectionChange]);
 
   const handleSpeakingChange = useCallback((speaking) => {
+    console.log("Speaking change:", speaking);
     setIsSpeaking(speaking);
     onSpeakingChange(speaking);
   }, [onSpeakingChange]);
@@ -89,6 +99,11 @@ export const SimliElevenLabsAvatarView = ({
               <div>• Connecting to ElevenLabs for AI conversation</div>
               <div>• Setting up microphone for voice input</div>
             </div>
+            {agentId && (
+              <div className="mt-2 text-xs text-yellow-300">
+                Agent ID: {agentId}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import SimliAvatar from '../components/SimliAvatar';
 import SimliElevenLabsAvatar from '../components/SimliElevenLabsAvatar';
+import { validateElevenLabsAgent, TEST_AGENT_IDS } from '../utils/elevenLabsUtils';
 
 export const SimliTest = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [testMode, setTestMode] = useState('simli-only'); // 'simli-only' or 'elevenlabs-integrated'
-  const [testAgentId, setTestAgentId] = useState('agent_1201kfk7960ffzt94m5jr0cfhqx4'); // Default test agent
+  const [testAgentId, setTestAgentId] = useState(TEST_AGENT_IDS[0]); // Default test agent
+  const [agentValidation, setAgentValidation] = useState({ valid: null, error: null });
+  const [isValidating, setIsValidating] = useState(false);
 
   const handleConnectionChange = (connected) => {
     setIsConnected(connected);
@@ -20,6 +23,28 @@ export const SimliTest = () => {
   const toggleSpeaking = () => {
     setIsSpeaking(!isSpeaking);
   };
+
+  // Validate agent ID when it changes
+  const validateAgent = async (agentId) => {
+    if (!agentId || testMode === 'simli-only') {
+      setAgentValidation({ valid: null, error: null });
+      return;
+    }
+
+    setIsValidating(true);
+    const result = await validateElevenLabsAgent(agentId);
+    setAgentValidation(result);
+    setIsValidating(false);
+  };
+
+  // Auto-validate when agent ID changes
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      validateAgent(testAgentId);
+    }, 500); // Debounce validation
+
+    return () => clearTimeout(timeoutId);
+  }, [testAgentId, testMode]);
 
   // Generate and send audio when speaking
   useEffect(() => {
@@ -152,14 +177,54 @@ export const SimliTest = () => {
                 {testMode === 'elevenlabs-integrated' && (
                   <div className="p-4 rounded-lg bg-gray-50">
                     <h3 className="font-bold mb-2">ElevenLabs Agent ID</h3>
-                    <input
-                      type="text"
-                      value={testAgentId}
-                      onChange={(e) => setTestAgentId(e.target.value)}
-                      placeholder="Enter ElevenLabs Agent ID"
-                      className="w-full p-2 border rounded-lg text-sm font-mono"
-                    />
-                    <p className="text-xs text-gray-600 mt-1">
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={testAgentId}
+                        onChange={(e) => setTestAgentId(e.target.value)}
+                        placeholder="Enter ElevenLabs Agent ID"
+                        className="w-full p-2 border rounded-lg text-sm font-mono"
+                      />
+                      
+                      {/* Agent Validation Status */}
+                      <div className="flex items-center gap-2 text-sm">
+                        {isValidating ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-gray-600">Validating agent...</span>
+                          </>
+                        ) : agentValidation.valid === true ? (
+                          <>
+                            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                            <span className="text-green-700">Agent is valid and accessible</span>
+                          </>
+                        ) : agentValidation.valid === false ? (
+                          <>
+                            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                            <span className="text-red-700">{agentValidation.error}</span>
+                          </>
+                        ) : (
+                          <span className="text-gray-500">Enter an agent ID to validate</span>
+                        )}
+                      </div>
+
+                      {/* Quick Test Agents */}
+                      <div className="mt-2">
+                        <p className="text-xs text-gray-600 mb-1">Quick test agents:</p>
+                        <div className="flex gap-1 flex-wrap">
+                          {TEST_AGENT_IDS.map((agentId) => (
+                            <button
+                              key={agentId}
+                              onClick={() => setTestAgentId(agentId)}
+                              className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 rounded border"
+                            >
+                              {agentId.slice(-8)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-2">
                       The agent ID from your ElevenLabs dashboard
                     </p>
                   </div>
@@ -265,7 +330,13 @@ export const SimliTest = () => {
               <div>Simli API Key: {import.meta.env.VITE_SIMLI_API_KEY ? 'Set' : 'Missing'}</div>
               <div>ElevenLabs API Key: {import.meta.env.VITE_ELEVENLABS_API_KEY ? 'Set' : 'Missing'}</div>
               {testMode === 'elevenlabs-integrated' && (
-                <div>Agent ID: {testAgentId}</div>
+                <>
+                  <div>Agent ID: {testAgentId}</div>
+                  <div>Agent Valid: {
+                    agentValidation.valid === null ? 'Not checked' :
+                    agentValidation.valid ? 'Yes' : 'No'
+                  }</div>
+                </>
               )}
             </div>
           </div>
