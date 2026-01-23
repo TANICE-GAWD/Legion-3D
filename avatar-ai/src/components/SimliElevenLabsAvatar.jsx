@@ -125,7 +125,7 @@ const SimliElevenLabsAvatar = ({
   };
 
   /**
-   * Sets up voice streaming using Web Audio API with modern AudioWorklet (fallback to ScriptProcessor)
+   * Sets up voice streaming using modern AudioWorkletNode with ScriptProcessor fallback
    */
   const setupVoiceStream = async () => {
     try {
@@ -151,16 +151,54 @@ const SimliElevenLabsAvatar = ({
       const source = audioContext.createMediaStreamSource(stream);
       sourceRef.current = source;
 
-      // Try to use AudioWorkletNode (modern approach), fallback to ScriptProcessorNode
       let processor;
+      let useModernAudio = false;
       
       try {
-        // Modern approach with AudioWorkletNode (if supported)
+        // Try modern AudioWorkletNode approach first
         if (audioContext.audioWorklet) {
-          // For now, we'll use the fallback since AudioWorklet requires a separate file
-          throw new Error("Using fallback for compatibility");
+          console.log("🎵 Using modern AudioWorkletNode for audio processing");
+          
+          // Load the audio processor worklet
+          await audioContext.audioWorklet.addModule('/audio-processor.js');
+          
+          // Create AudioWorkletNode
+          processor = new AudioWorkletNode(audioContext, 'audio-processor');
+          processorRef.current = processor;
+          useModernAudio = true;
+          
+          // Handle messages from the worklet
+          processor.port.onmessage = (event) => {
+            const { type, audioData, level, isSpeaking, hasAudio } = event.data;
+            
+            if (type === 'audioData') {
+              // Update UI state
+              setMicLevel(level);
+              setIsUserSpeaking(isSpeaking);
+              
+              // Send audio to WebSocket if user is speaking
+              if (hasAudio && isSpeaking && websocketRef.current?.readyState === WebSocket.OPEN) {
+                const base64Audio = float32ToBase64PCM(audioData);
+                sendAudioToWebSocket(base64Audio);
+                
+                // Reduced logging frequency to avoid spam
+                if (Math.random() < 0.05) { // Log only 5% of audio sends
+                  console.log("Sending audio to ElevenLabs (AudioWorklet), level:", level);
+                }
+              }
+            }
+          };
+          
+          // Connect the audio processing chain
+          source.connect(processor);
+          processor.connect(audioContext.destination);
+          
+        } else {
+          throw new Error("AudioWorklet not supported, using fallback");
         }
       } catch (workletError) {
+        console.warn("AudioWorklet failed, falling back to ScriptProcessorNode:", workletError.message);
+        
         // Fallback to ScriptProcessorNode (deprecated but widely supported)
         console.warn("Using deprecated ScriptProcessorNode for audio processing");
         const bufferSize = 4096;
@@ -209,7 +247,7 @@ const SimliElevenLabsAvatar = ({
               
               // Reduced logging frequency to avoid spam
               if (Math.random() < 0.05) { // Log only 5% of audio sends
-                console.log("Sending audio to ElevenLabs, level:", level);
+                console.log("Sending audio to ElevenLabs (ScriptProcessor), level:", level);
               }
             }
           } catch (error) {
@@ -224,7 +262,7 @@ const SimliElevenLabsAvatar = ({
         processor.connect(audioContext.destination);
       }
 
-      console.log("Voice streaming started");
+      console.log(`Voice streaming started using ${useModernAudio ? 'AudioWorkletNode' : 'ScriptProcessorNode'}`);
     } catch (error) {
       console.error("Failed to setup voice stream:", error);
       throw error;
@@ -232,31 +270,57 @@ const SimliElevenLabsAvatar = ({
   };
 
   /**
-   * Stops voice streaming
+   * Stops voice streaming and cleans up audio resources
    */
   const stopVoiceStream = () => {
     if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current.onaudioprocess = null;
+      try {
+        // Handle both AudioWorkletNode and ScriptProcessorNode cleanup
+        if (processorRef.current instanceof AudioWorkletNode) {
+          // AudioWorkletNode cleanup
+          processorRef.current.port.onmessage = null;
+          processorRef.current.disconnect();
+          console.log("AudioWorkletNode disconnected");
+        } else {
+          // ScriptProcessorNode cleanup
+          processorRef.current.disconnect();
+          processorRef.current.onaudioprocess = null;
+          console.log("ScriptProcessorNode disconnected");
+        }
+      } catch (error) {
+        console.warn("Error disconnecting processor:", error);
+      }
       processorRef.current = null;
     }
 
     if (sourceRef.current) {
-      sourceRef.current.disconnect();
+      try {
+        sourceRef.current.disconnect();
+      } catch (error) {
+        console.warn("Error disconnecting source:", error);
+      }
       sourceRef.current = null;
     }
 
     if (audioContextRef.current) {
-      audioContextRef.current.close();
+      try {
+        audioContextRef.current.close();
+      } catch (error) {
+        console.warn("Error closing audio context:", error);
+      }
       audioContextRef.current = null;
     }
 
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      try {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      } catch (error) {
+        console.warn("Error stopping stream tracks:", error);
+      }
       streamRef.current = null;
     }
 
-    console.log("Voice streaming stopped");
+    console.log("Voice streaming stopped and cleaned up");
   };
 
   /**
@@ -443,44 +507,123 @@ const SimliElevenLabsAvatar = ({
             onSpeakingChange(true);
           }
 
-          // Handle audio data - Send to Simli for avatar animation
+          // Handle audio data - Play audio directly (Simli temporarily disabled)
           if (data.type === ElevenLabsEventTypes.AUDIO) {
             const { audio_base_64 } = data.audio_event;
             console.log("🔊 Received audio from ElevenLabs, length:", audio_base_64.length);
 
-            if (simliClientRef.current && isSimliConnected) {
+            try {
+              // Convert base64 audio to Uint8Array for playback
+              const audioData = base64ToUint8Array(audio_base_64);
+              
+              // TEMPORARILY DISABLED: Send to Simli for avatar animation
+              // if (simliClientRef.current && isSimliConnected) {
+              //   simliClientRef.current.sendAudioData(audioData);
+              //   console.log("✅ Sent ElevenLabs audio to Simli:", audioData.length, "bytes");
+              // }
+              
+              // Play audio directly with multiple format attempts
               try {
-                // Convert base64 audio to Uint8Array and send to Simli
-                const audioData = base64ToUint8Array(audio_base_64);
-                simliClientRef.current.sendAudioData(audioData);
-                console.log("✅ Sent ElevenLabs audio to Simli:", audioData.length, "bytes");
+                // Try different MIME types as ElevenLabs might send different formats
+                const mimeTypes = [
+                  'audio/mpeg',     // MP3
+                  'audio/wav',      // WAV
+                  'audio/webm',     // WebM
+                  'audio/ogg',      // OGG
+                  'audio/mp4',      // MP4/AAC
+                  'audio/x-wav',    // Alternative WAV
+                  'audio/pcm'       // PCM
+                ];
                 
-                // Also play audio directly through the audio element for backup
-                if (audioRef.current) {
+                let audioPlayed = false;
+                
+                // Try each MIME type until one works
+                for (const mimeType of mimeTypes) {
+                  if (audioPlayed) break;
+                  
                   try {
-                    // Create audio blob and play it
-                    const audioBlob = new Blob([audioData], { type: 'audio/wav' });
+                    const audioBlob = new Blob([audioData], { type: mimeType });
                     const audioUrl = URL.createObjectURL(audioBlob);
                     
-                    // Create a temporary audio element to ensure playback
-                    const tempAudio = new Audio(audioUrl);
+                    const tempAudio = new Audio();
                     tempAudio.volume = 0.8;
-                    tempAudio.play().then(() => {
-                      console.log("🔊 Audio playback started");
-                      // Clean up URL after playback
-                      tempAudio.onended = () => URL.revokeObjectURL(audioUrl);
-                    }).catch(error => {
-                      console.error("Audio playback failed:", error);
+                    
+                    // Set up event handlers before setting src
+                    tempAudio.onloadeddata = () => {
+                      console.log(`🔊 Audio loaded successfully with ${mimeType}`);
+                    };
+                    
+                    tempAudio.oncanplay = () => {
+                      if (!audioPlayed) {
+                        audioPlayed = true;
+                        tempAudio.play().then(() => {
+                          console.log(`🔊 Audio playback started with ${mimeType} (Simli disabled)`);
+                        }).catch(playError => {
+                          console.error(`Play error with ${mimeType}:`, playError);
+                        });
+                      }
+                    };
+                    
+                    tempAudio.onended = () => {
                       URL.revokeObjectURL(audioUrl);
-                    });
-                  } catch (audioError) {
-                    console.error("Error creating audio playback:", audioError);
+                      console.log("🔊 Audio playback ended");
+                    };
+                    
+                    tempAudio.onerror = (e) => {
+                      URL.revokeObjectURL(audioUrl);
+                      console.log(`❌ Failed with ${mimeType}, trying next format...`);
+                    };
+                    
+                    // Set the source
+                    tempAudio.src = audioUrl;
+                    tempAudio.load();
+                    
+                    // Break after first attempt that doesn't immediately fail
+                    break;
+                    
+                  } catch (formatError) {
+                    console.log(`❌ Format ${mimeType} failed:`, formatError.message);
+                    continue;
                   }
                 }
                 
-              } catch (error) {
-                console.error("Error sending audio to Simli:", error);
+                // Fallback: Try using Web Audio API for direct playback
+                if (!audioPlayed) {
+                  console.log("🔄 Trying Web Audio API fallback...");
+                  try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    audioContext.decodeAudioData(audioData.buffer.slice()).then(audioBuffer => {
+                      const source = audioContext.createBufferSource();
+                      const gainNode = audioContext.createGain();
+                      
+                      source.buffer = audioBuffer;
+                      gainNode.gain.value = 0.8;
+                      
+                      source.connect(gainNode);
+                      gainNode.connect(audioContext.destination);
+                      
+                      source.start(0);
+                      console.log("🔊 Audio playback started via Web Audio API (Simli disabled)");
+                      
+                      source.onended = () => {
+                        audioContext.close();
+                        console.log("🔊 Web Audio API playback ended");
+                      };
+                    }).catch(decodeError => {
+                      console.error("❌ Web Audio API decode failed:", decodeError);
+                      audioContext.close();
+                    });
+                  } catch (webAudioError) {
+                    console.error("❌ Web Audio API failed:", webAudioError);
+                  }
+                }
+                
+              } catch (audioError) {
+                console.error("❌ All audio playback methods failed:", audioError);
               }
+              
+            } catch (error) {
+              console.error("Error processing audio:", error);
             }
           }
 
