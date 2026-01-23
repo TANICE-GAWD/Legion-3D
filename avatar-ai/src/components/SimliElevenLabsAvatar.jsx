@@ -813,20 +813,6 @@ const SimliElevenLabsAvatar = ({
             🔊 Test
           </button>
         </div>
-          {/* Simli Status */}
-          <div className={`w-3 h-3 rounded-full ${
-            isSimliConnected ? 'bg-green-500' : 
-            isLoading ? 'bg-yellow-500 animate-pulse' : 
-            'bg-red-500'
-          }`} title="Simli Connection" />
-          
-          {/* ElevenLabs Status */}
-          <div className={`w-3 h-3 rounded-full ${
-            isElevenLabsConnected ? 'bg-blue-500' : 
-            isLoading ? 'bg-yellow-500 animate-pulse' : 
-            'bg-red-500'
-          }`} title="ElevenLabs Connection" />
-        </div>
 
         {/* Audio Status Indicator */}
         {isSpeaking && (

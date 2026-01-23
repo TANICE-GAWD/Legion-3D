@@ -86,6 +86,6 @@ export const listElevenLabsAgents = async () => {
  * Common test agent IDs that are known to work
  */
 export const TEST_AGENT_IDS = [
-  'agent_1201kfk7960ffzt94m5jr0cfhqx4', // Default test agent
+  'agent_5901kfmmz0gnfserfyw932r615x0', // Default test agent
   // Add more known working agent IDs here
 ];
