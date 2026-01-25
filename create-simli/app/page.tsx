@@ -1,5 +1,8 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import { MessageCircle, Sparkles, ArrowRight } from "lucide-react";
 import SimliElevenlabs from "@/app/SimliElevenlabs";
 import DottedFace from "./Components/DottedFace";
 import SimliHeaderLogo from "./Components/Logo";
@@ -14,11 +17,12 @@ interface avatarSettings {
 
 // Customize your avatar here
 const avatar: avatarSettings = {
-  elevenlabs_agentid: "agent_1201kfk7960ffzt94m5jr0cfhqx4", 
+  elevenlabs_agentid: "agent_5901kfmmz0gnfserfyw932r615x0", 
   simli_faceid: "0c2b8b04-5274-41f1-a21c-d5c98322efa9", 
 };
 
 const Demo: React.FC = () => {
+  const router = useRouter();
   const [showDottedFace, setShowDottedFace] = useState(true);
 
   const onStart = () => {
@@ -47,6 +51,31 @@ const Demo: React.FC = () => {
           create-simli-app (ElevenLabs)
         </text>
       </div>
+
+      {/* Navigation to Dashboard */}
+      <div className="mb-8 flex gap-4">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => router.push('/dashboard')}
+          className="bg-[#4D96FF] text-white px-6 py-3 rounded-xl border-[3px] border-white shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] font-black text-lg hover:shadow-[6px_6px_0px_0px_rgba(255,255,255,1)] transition-all flex items-center gap-2"
+        >
+          <MessageCircle size={20} strokeWidth={3} />
+          CHAT WITH AVATARS
+          <ArrowRight size={20} strokeWidth={3} />
+        </motion.button>
+        
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => router.push('/create-avatar')}
+          className="bg-[#6BCB77] text-white px-6 py-3 rounded-xl border-[3px] border-white shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] font-black text-lg hover:shadow-[6px_6px_0px_0px_rgba(255,255,255,1)] transition-all flex items-center gap-2"
+        >
+          <Sparkles size={20} strokeWidth={3} />
+          CREATE AVATAR
+        </motion.button>
+      </div>
+
       <div className="flex flex-col items-center gap-6 bg-effect15White p-6 pb-[40px] rounded-xl w-full">
         <div>
           {showDottedFace && <DottedFace />}
@@ -63,20 +92,20 @@ const Demo: React.FC = () => {
       <div className="max-w-[350px] font-thin flex flex-col items-center ">
         <span className="font-bold mb-[8px] leading-5 ">
           {" "}
-          Create Simli App is a starter repo for creating visual avatars with
-          Simli{" "}
+          Create Simli App with integrated chat features and avatar management
         </span>
         <ul className="list-decimal list-inside max-w-[350px] ml-[6px] mt-2">
           <li className="mb-1">
             Fill in your ElevenLabs and Simli API keys in .env file.
           </li>
           <li className="mb-1">
-            Test out the interaction and have a talk with the ElevnLabs-powered,
-            Simli-visualized avatar.
+            Create and manage multiple AI avatars with custom personalities.
           </li>
           <li className="mb-1">
-            You can replace the avatar's face and agent with your own. Do this
-            by editing <code>app/page.tsx</code>.
+            Chat with your avatars using voice and video in real-time.
+          </li>
+          <li className="mb-1">
+            View conversation history and session recordings.
           </li>
         </ul>
         <span className=" mt-[16px]">

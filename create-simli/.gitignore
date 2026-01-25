@@ -1,3 +1,5 @@
+/python -m uvicorn api.main:app --reload
+
 # Logs
 logs
 *.log

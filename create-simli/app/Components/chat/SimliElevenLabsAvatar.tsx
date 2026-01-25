@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
+import { SimliClient } from "simli-client";
 import ConnectionDebugger from "./ConnectionDebugger";
 
 // WebSocket event types for ElevenLabs
@@ -10,35 +11,140 @@ const ElevenLabsEventTypes = {
   PING: "ping",
   PONG: "pong",
   CONVERSATION_INITIATION: "conversation_initiation_client_data"
-};
+} as const;
 
-const SimliElevenLabsAvatar = ({ 
+interface SimliElevenLabsAvatarProps {
+  agentId: string;
+  faceId?: string;
+  className?: string;
+  onConnectionChange?: (connected: boolean) => void;
+  onSpeakingChange?: (speaking: boolean) => void;
+  autoStart?: boolean;
+}
+
+const SimliElevenLabsAvatar: React.FC<SimliElevenLabsAvatarProps> = ({ 
   agentId,
+  faceId = "0c2b8b04-5274-41f1-a21c-d5c98322efa9",
   className = "",
   onConnectionChange = () => {},
   onSpeakingChange = () => {},
   autoStart = false 
 }) => {
   // State management
+  const [isSimliConnected, setIsSimliConnected] = useState(false);
   const [isElevenLabsConnected, setIsElevenLabsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   // Refs
-  const websocketRef = useRef(null);
+  const websocketRef = useRef<WebSocket | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const simliClientRef = useRef<SimliClient | null>(null);
 
   /**
    * Sends message to WebSocket
    */
-  const sendMessage = (websocket, message) => {
+  const sendMessage = (websocket: WebSocket, message: any) => {
     if (websocket.readyState === WebSocket.OPEN) {
       websocket.send(JSON.stringify(message));
     }
   };
 
   /**
-   * Establishes WebSocket connection to ElevenLabs with basic text-only communication
+   * Initializes the Simli client
+   */
+  const initializeSimliClient = useCallback(() => {
+    if (videoRef.current && audioRef.current) {
+      const simliClient = new SimliClient();
+      const SimliConfig = {
+        apiKey: process.env.NEXT_PUBLIC_SIMLI_API_KEY,
+        faceID: faceId,
+        handleSilence: true,
+        videoRef: videoRef.current,
+        audioRef: audioRef.current,
+      };
+
+      simliClient.Initialize(SimliConfig as any);
+      simliClientRef.current = simliClient;
+      console.log("Simli Client initialized");
+      
+      // Set up Simli event listeners
+      simliClient.on("connected", () => {
+        console.log("Simli connected");
+        setIsSimliConnected(true);
+      });
+
+      simliClient.on("disconnected", () => {
+        console.log("Simli disconnected");
+        setIsSimliConnected(false);
+      });
+    }
+  }, [faceId]);
+
+  /**
+   * Converts base64 audio to Uint8Array for Simli
+   */
+  const base64ToUint8Array = (base64: string): Uint8Array => {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  };
+
+  /**
+   * Gets ElevenLabs signed URL
+   */
+  const getElevenLabsSignedUrl = async (agentId: string): Promise<string> => {
+    try {
+      const apiKey = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY;
+      
+      if (!apiKey) {
+        throw new Error("ElevenLabs API key not found in environment variables");
+      }
+
+      if (!agentId) {
+        throw new Error("Agent ID is required");
+      }
+
+      console.log("Requesting signed URL for agent:", agentId);
+
+      const response = await fetch(
+        `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`,
+        {
+          method: 'GET',
+          headers: {
+            'xi-api-key': apiKey,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`Agent ID '${agentId}' not found. Please check your ElevenLabs dashboard and ensure the agent exists.`);
+        } else if (response.status === 401) {
+          throw new Error("Invalid ElevenLabs API key. Please check your NEXT_PUBLIC_ELEVENLABS_API_KEY in .env file.");
+        } else if (response.status === 403) {
+          throw new Error("Access denied. Please check if your API key has access to this agent.");
+        } else {
+          throw new Error(`ElevenLabs API error: ${response.status} - ${response.statusText}`);
+        }
+      }
+
+      const data = await response.json();
+      return data.signed_url;
+    } catch (error) {
+      console.error("Error getting ElevenLabs signed URL:", error);
+      throw error;
+    }
+  };
+
+  /**
+   * Establishes WebSocket connection to ElevenLabs
    */
   const connectToElevenLabs = async () => {
     console.log("connectToElevenLabs called", { 
@@ -73,7 +179,7 @@ const SimliElevenLabsAvatar = ({
         clearTimeout(connectionTimeout);
         setIsElevenLabsConnected(true);
 
-        // Send conversation initiation with proper format
+        // Send conversation initiation
         const initMessage = {
           type: ElevenLabsEventTypes.CONVERSATION_INITIATION,
           conversation_initiation_client_data: {
@@ -119,9 +225,17 @@ const SimliElevenLabsAvatar = ({
             onSpeakingChange(true);
           }
 
-          // Handle audio data - REMOVED: No audio processing for now
+          // Handle audio data and send to Simli
           if (data.type === ElevenLabsEventTypes.AUDIO) {
-            console.log("🔊 Received audio from ElevenLabs (ignored - no audio processing)");
+            console.log("🔊 Received audio from ElevenLabs");
+            if (simliClientRef.current && data.audio_event?.audio_base_64) {
+              try {
+                const audioData = base64ToUint8Array(data.audio_event.audio_base_64);
+                simliClientRef.current.sendAudioData(audioData);
+              } catch (error) {
+                console.error("Error sending audio to Simli:", error);
+              }
+            }
           }
 
           // Handle interruption
@@ -138,11 +252,6 @@ const SimliElevenLabsAvatar = ({
             onSpeakingChange(false);
           }
 
-          // Handle conversation metadata
-          if (data.type === "conversation_initiation_metadata") {
-            console.log("📋 Conversation metadata:", data.conversation_initiation_metadata_event);
-          }
-
         } catch (error) {
           console.error("Error processing WebSocket message:", error);
         }
@@ -156,9 +265,13 @@ const SimliElevenLabsAvatar = ({
         onSpeakingChange(false);
         websocketRef.current = null;
         
-        // Only show error if it wasn't a clean close
-        if (event.code !== 1000 && event.code !== 1001) {
-          setError(`ElevenLabs disconnected: ${event.reason || 'Unknown reason'}`);
+        // Handle specific error codes
+        if (event.code === 1002) {
+          setError("ElevenLabs quota exceeded. Please check your usage at elevenlabs.io or upgrade your plan.");
+        } else if (event.code === 1008) {
+          setError("ElevenLabs API key invalid or expired. Please check your API key.");
+        } else if (event.code !== 1000 && event.code !== 1001) {
+          setError(`ElevenLabs disconnected: ${event.reason || 'Unknown reason'} (Code: ${event.code})`);
         }
       };
 
@@ -168,61 +281,14 @@ const SimliElevenLabsAvatar = ({
         setError("ElevenLabs connection failed - check agent ID and API key");
         setIsElevenLabsConnected(false);
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to connect to ElevenLabs:", error);
       setError(`Failed to connect to ElevenLabs: ${error.message}`);
     }
   };
 
   /**
-   * Gets ElevenLabs signed URL with better error handling
-   */
-  const getElevenLabsSignedUrl = async (agentId) => {
-    try {
-      const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
-      
-      if (!apiKey) {
-        throw new Error("ElevenLabs API key not found in environment variables");
-      }
-
-      if (!agentId) {
-        throw new Error("Agent ID is required");
-      }
-
-      console.log("Requesting signed URL for agent:", agentId);
-
-      const response = await fetch(
-        `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`,
-        {
-          method: 'GET',
-          headers: {
-            'xi-api-key': apiKey,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error(`Agent ID '${agentId}' not found. Please check your ElevenLabs dashboard and ensure the agent exists.`);
-        } else if (response.status === 401) {
-          throw new Error("Invalid ElevenLabs API key. Please check your VITE_ELEVENLABS_API_KEY in .env file.");
-        } else if (response.status === 403) {
-          throw new Error("Access denied. Please check if your API key has access to this agent.");
-        } else {
-          throw new Error(`ElevenLabs API error: ${response.status} - ${response.statusText}`);
-        }
-      }
-
-      const data = await response.json();
-      return data.signed_url;
-    } catch (error) {
-      console.error("Error getting ElevenLabs signed URL:", error);
-      throw error;
-    }
-  };
-
-  /**
-   * Starts ElevenLabs connection only (no Simli)
+   * Starts both Simli and ElevenLabs connections
    */
   const startConnection = useCallback(async () => {
     console.log("startConnection called", { 
@@ -245,15 +311,23 @@ const SimliElevenLabsAvatar = ({
     setError("");
 
     try {
-      // Connect directly to ElevenLabs
+      // Initialize Simli client first
+      initializeSimliClient();
+      
+      // Start Simli session
+      if (simliClientRef.current) {
+        await simliClientRef.current.start();
+      }
+      
+      // Connect to ElevenLabs
       await connectToElevenLabs();
       
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error starting connection:", error);
       setError(`Failed to start: ${error.message}`);
       setIsLoading(false);
     }
-  }, [agentId]);
+  }, [agentId, initializeSimliClient]);
 
   /**
    * Stops all connections cleanly
@@ -261,7 +335,6 @@ const SimliElevenLabsAvatar = ({
   const stopConnection = useCallback(() => {
     console.log("Stopping connection...");
     
-    // Set loading to prevent new connections during cleanup
     setIsLoading(true);
     
     // Close ElevenLabs WebSocket
@@ -274,7 +347,18 @@ const SimliElevenLabsAvatar = ({
       }
     }
     
+    // Stop Simli client
+    if (simliClientRef.current) {
+      try {
+        simliClientRef.current.close();
+        simliClientRef.current = null;
+      } catch (error) {
+        console.error("Error closing Simli client:", error);
+      }
+    }
+    
     // Reset all states
+    setIsSimliConnected(false);
     setIsElevenLabsConnected(false);
     setIsLoading(false);
     setIsSpeaking(false);
@@ -289,19 +373,19 @@ const SimliElevenLabsAvatar = ({
 
   // Update connection status
   useEffect(() => {
-    onConnectionChange(isElevenLabsConnected);
+    const connected = isSimliConnected && isElevenLabsConnected;
+    onConnectionChange(connected);
     
-    if (isElevenLabsConnected) {
+    if (connected) {
       setIsLoading(false);
     }
-  }, [isElevenLabsConnected, onConnectionChange]);
+  }, [isSimliConnected, isElevenLabsConnected, onConnectionChange]);
 
   // Auto-start if enabled
   useEffect(() => {
     if (autoStart && agentId) {
       console.log("Auto-start triggered", { agentId, isLoading, isElevenLabsConnected });
       
-      // Only start if not already connected or loading
       if (!isLoading && !isElevenLabsConnected) {
         const timer = setTimeout(() => {
           console.log("Executing auto-start...");
@@ -311,29 +395,36 @@ const SimliElevenLabsAvatar = ({
         return () => clearTimeout(timer);
       }
     }
-  }, [autoStart, agentId]);
+  }, [autoStart, agentId, isLoading, isElevenLabsConnected, startConnection]);
 
-  // Cleanup on unmount only
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       console.log("Component unmounting, cleaning up connections...");
       stopConnection();
     };
-  }, []);
+  }, [stopConnection]);
 
   return (
     <div className={`relative ${className}`}>
       {/* Connection Debugger */}
       <ConnectionDebugger
-        isSimliConnected={false}
+        isSimliConnected={isSimliConnected}
         isElevenLabsConnected={isElevenLabsConnected}
         isLoading={isLoading}
         error={error}
         agentId={agentId}
       />
 
-      {/* Simple Container - No video/audio elements */}
-      <div className="relative w-full h-full bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center">
+      {/* Video and Audio Elements */}
+      <div className="relative w-full h-full bg-gray-900 rounded-lg overflow-hidden">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover"
+        />
+        <audio ref={audioRef} autoPlay />
         
         {/* Loading Overlay */}
         {isLoading && (
@@ -341,7 +432,7 @@ const SimliElevenLabsAvatar = ({
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               <span className="text-white font-medium">
-                Connecting to ElevenLabs...
+                Connecting...
               </span>
             </div>
           </div>
@@ -365,7 +456,12 @@ const SimliElevenLabsAvatar = ({
         )}
 
         {/* Connection Status */}
-        <div className="absolute top-3 right-3">
+        <div className="absolute top-3 right-3 flex gap-2">
+          <div className={`w-3 h-3 rounded-full ${
+            isSimliConnected ? 'bg-green-500' : 
+            isLoading ? 'bg-yellow-500 animate-pulse' : 
+            'bg-red-500'
+          }`} title="Simli Connection" />
           <div className={`w-3 h-3 rounded-full ${
             isElevenLabsConnected ? 'bg-blue-500' : 
             isLoading ? 'bg-yellow-500 animate-pulse' : 
@@ -378,16 +474,6 @@ const SimliElevenLabsAvatar = ({
           <div className="absolute top-3 left-3 bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2">
             <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
             AI Speaking
-          </div>
-        )}
-
-        {/* Placeholder Content */}
-        {!isLoading && !error && (
-          <div className="text-center text-gray-400">
-            <div className="text-lg font-medium mb-2">ElevenLabs Chat</div>
-            <div className="text-sm">
-              {isElevenLabsConnected ? 'Connected - Text responses only' : 'Not connected'}
-            </div>
           </div>
         )}
 
